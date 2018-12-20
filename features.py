@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy import sparse
+import time
 
 class Feature:
     """
@@ -11,19 +12,22 @@ class Feature:
         """save vocabulary list and tag list"""
         self._vocab_list = vocab_list
         self._tag_list = tag_list
+        self._word_idx_dict = {word: idx for idx,word in enumerate(vocab_list)}
+        self._tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
 
     def __call__(self):
         """call function"""
         pass
 
-    def feature_mat(self,start,step):
-        """return numpy feature matrix"""
-        mat = np.zeros([len(self._tag_list),step*len(self._tag_list)])
-        if start is None:
-            return mat
-        for tag_idx in range(len(self._tag_list)):
-            mat[tag_idx][start + step * tag_idx] = 1
-        return mat
+    def feature_vec(self,shift,step,tag):
+        vec = np.zeros([step*len(self._tag_list)],dtype=bool)
+        tag_idx = self._tag_idx_dict.get(tag,None)
+        if shift is None or tag_idx is None:
+            return vec
+        pos = shift + tag_idx*step
+        vec[pos] = 1
+        return vec
+
 
 class F100(Feature):
     """
@@ -34,11 +38,11 @@ class F100(Feature):
     def __init__(self, vocab_list,tag_list):
         """create word hash table"""
         super(F100,self).__init__(vocab_list,tag_list)
-        self._word_idx_dict = {word: idx for idx,word in enumerate(vocab_list)}
 
-    def __call__(self, word):
+    def __call__(self, word,tag):
         """return F100/F106/F107 feature matrix"""
-        return self.feature_mat(self._word_idx_dict.get(word,None),len(self._word_idx_dict))
+        return self.feature_vec(self._word_idx_dict.get(word,None),len(self._word_idx_dict),tag)
+
 
 class F101(Feature):
     """
@@ -56,9 +60,9 @@ class F101(Feature):
                 prefix_set.add(w[:self._n])
         self._prefix_to_idx = {prefix: idx for idx, prefix in enumerate(list(prefix_set))}
 
-    def __call__(self, word):
+    def __call__(self, word,tag):
         """return F101 feature matrix"""
-        return self.feature_mat(self._prefix_to_idx.get(word[:self._n], None),len(self._prefix_to_idx))
+        return self.feature_vec(self._prefix_to_idx.get(word[:self._n],None),len(self._prefix_to_idx),tag)
 
 class F102(Feature):
     """
@@ -76,9 +80,9 @@ class F102(Feature):
                 suffix_set.add(w[-self._n:])
         self._suffix_to_idx = {suffix: idx for idx, suffix in enumerate(list(suffix_set))}
 
-    def __call__(self, word):
+    def __call__(self, word,tag):
         """return F102 feature matrix"""
-        return self.feature_mat(self._suffix_to_idx.get(word[-self._n:], None),len(self._suffix_to_idx))
+        return self.feature_vec(self._suffix_to_idx.get(word[-self._n:], None),len(self._suffix_to_idx),tag)
 
 class F103(Feature):
     """
@@ -89,9 +93,9 @@ class F103(Feature):
         super(F103, self).__init__(vocab_list, tag_list)
         self._tags_idx_dict = {(tag1,tag2): idx2+idx1*len(tag_list) for idx1, tag1 in enumerate(tag_list) for idx2, tag2 in enumerate(tag_list)}
 
-    def __call__(self,t_2,t_1):
+    def __call__(self,t_2,t_1,tag):
         "return F103 feature matrix"
-        return self.feature_mat(self._tags_idx_dict.get((t_2,t_1),None),len(self._tag_list)*len(self._tag_list))
+        return self.feature_vec(self._tags_idx_dict.get((t_2,t_1),None),len(self._tag_list)*len(self._tag_list),tag)
 
 class F104(Feature):
     """
@@ -102,9 +106,9 @@ class F104(Feature):
         super(F104, self).__init__(vocab_list, tag_list)
         self._tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
 
-    def __call__(self,t_1):
+    def __call__(self,t_1,tag):
         """return F104 feature matrix"""
-        return self.feature_mat(self._tag_idx_dict.get(t_1,None),len(self._tag_list))
+        return self.feature_vec(self._tag_idx_dict.get(t_1,None),len(self._tag_list),tag)
 
 class F105(Feature):
     """
@@ -114,31 +118,17 @@ class F105(Feature):
         """init class"""
         super(F105,self).__init__(vocab_list, tag_list)
 
-    def __call__(self):
+    def __call__(self,tag):
         """return F105 feature matrix"""
-        return self.feature_mat(0,1)
+        return self.feature_vec(0,1,tag)
 
-class Sparse_Mat(Feature):
-    """
-    sparse matrix class
-    """
-    def __init__(self,vocab_list,tag_list,word,tag,mat_list):
-        """create sparse matrix"""
-        super(Sparse_Mat, self).__init__(vocab_list, tag_list)
-        self._word = word
-        self._tag = tag
-        self._spr_mat = sparse.csr_matrix(mat_list[0])
-        for mat in mat_list[1:]:
-            assert np.size(mat, 0) == len(self._tag_list)
-            self._spr_mat = sparse.hstack([self._spr_mat,mat])
-
-    def __call__(self):
-        """return sparse matrix"""
-        return self._spr_mat
-
-    def word_tag(self):
-        """return word and tag"""
-        return (word,tag)
+def sparse_vec_hstack(vec_list):
+    #spr_vec = sparse.csr_matrix(vec_list[0], dtype=bool)
+    spr_vec = vec_list[0]
+    for vec in vec_list[1:]:
+        #spr_vec = sparse.hstack((spr_vec, sparse.csr_matrix(vec, dtype=bool)))
+        spr_vec = np.hstack((spr_vec,vec))
+    return sparse.csr_matrix(spr_vec)
 
 if __name__ == '__main__':
     """
@@ -156,67 +146,46 @@ if __name__ == '__main__':
     f_104 = F104(vocab_list,tag_list)
     f_105 = F105(vocab_list,tag_list)
 
-    # test F100
-    assert np.array_equal(np.array([[1., 0., 0., 0., 0., 0., 0., 0.],
-                                    [0., 0., 0., 0., 1., 0., 0., 0.]]),
-                                    f_100('tomer'))
-    assert np.array_equal(np.array([[0., 1., 0., 0., 0., 0., 0., 0.],
-                                    [0., 0., 0., 0., 0., 1., 0., 0.]]),
-                                    f_100('ofir'))
-    assert np.array_equal(np.array([[0., 0., 1., 0., 0., 0., 0., 0.],
-                                    [0., 0., 0., 0., 0., 0., 1., 0.]]),
-                                    f_100('roy'))
-    assert np.array_equal(np.array([[0., 0., 0., 1., 0., 0., 0., 0.],
-                                    [0., 0., 0., 0., 0., 0., 0., 1.]]),
-                                    f_100('nadav'))
-    # test F101
-    assert np.array_equal(f_101('tomer'), f_101('tomer' + 'not_prefix'))
-    assert np.array_equal(f_101('tomer'), f_101('t'))
-    assert not np.array_equal(f_101('tomer'), f_101('ofir'))
-
-    # test F102
-    assert np.array_equal(f_102('tomer'), f_102('not_suffix' + 'tomer'))
-    assert np.array_equal(f_102('tomer'), f_102('r'))
-    assert np.array_equal(f_102('tomer'), f_102('ofir'))
-
-    # test F103
-    assert np.array_equal(np.array([[1., 0., 0., 0.,0., 0., 0., 0.],
-                                    [0., 0., 0., 0.,1., 0., 0., 0.]]),
-                                    f_103('S','S'))
-
-    assert np.array_equal(np.array([[0., 1., 0., 0.,0., 0., 0., 0.],
-                                    [0., 0., 0., 0.,0., 1., 0., 0.]]),
-                                    f_103('S','T'))
-
-    assert np.array_equal(np.array([[0., 0., 1., 0.,0., 0., 0., 0.],
-                                    [0., 0., 0., 0.,0., 0., 1., 0.]]),
-                                    f_103('T','S'))
-
-    assert np.array_equal(np.array([[0., 0., 0., 1.,0., 0., 0., 0.],
-                                    [0., 0., 0., 0.,0., 0., 0., 1.]]),
-                                    f_103('T','T'))
-
-    # test F104
-    assert np.array_equal(np.array([[1., 0., 0., 0.],
-                                    [0., 0., 1., 0.]]),
-                                    f_104('S'))
-
-    assert np.array_equal(np.array([[0., 1., 0., 0.],
-                                    [0., 0., 0., 1.]]),
-                                    f_104('T'))
-    # test F105
-    assert np.array_equal(np.array([[1., 0.],
-                                    [0., 1.]]),
-                                    f_105())
-    # test sparse matrix
-    mat_list = [f_104('S'),f_105()]
-    assert  np.array_equal([[1., 0., 0., 0., 1., 0.],
-                           [0., 0., 1., 0., 0., 1.]],
-    Sparse_Mat(vocab_list,tag_list,'tomer','S',mat_list)().todense())
-
-    mat_list = [f_103('T','T'),f_104('T')]
-    assert  np.array_equal([[0., 0., 0., 1.,0., 0., 0., 0., 0., 1., 0., 0.],
-                            [0., 0., 0., 0.,0., 0., 0., 1., 0., 0., 0., 1.]],
-    Sparse_Mat(vocab_list,tag_list,'nadav','T',mat_list)().todense())
+    #test F100
+    assert np.array_equal(np.array([1, 0, 0, 0, 0, 0, 0, 0]),
+                                    f_100('tomer','S'))
+    assert np.array_equal(np.array([0, 1, 0, 0, 0, 0, 0, 0]),
+                                    f_100('ofir','S'))
+    assert np.array_equal(np.array([0, 0, 0, 0, 0, 0, 1, 0]),
+                                    f_100('roy','T'))
+    assert np.array_equal(np.array([0, 0, 0, 0, 0, 0, 0, 1]),
+                                    f_100('nadav','T'))
+    # # test F101
+    assert np.array_equal(f_101('tomer','S'), f_101('tomer' + 'not_prefix','S'))
+    assert np.array_equal(f_101('tomer','S'), f_101('t','S'))
+    assert not np.array_equal(f_101('tomer', 'S'), f_101('t', 'T'))
+    assert not np.array_equal(f_101('tomer','S'), f_101('ofir','S'))
+    # # test F102
+    assert np.array_equal(f_102('tomer','S'), f_102('not_suffix' + 'tomer','S'))
+    assert np.array_equal(f_102('tomer','S'), f_102('r','S'))
+    assert np.array_equal(f_102('tomer','S'), f_102('ofir','S'))
+    # # test F103
+    assert np.array_equal(np.array([1, 0, 0, 0, 0, 0, 0, 0]),
+                                    f_103('S','S','S'))
+    assert np.array_equal(np.array([0, 1, 0, 0, 0, 0, 0, 0]),
+                                    f_103('S','T','S'))
+    assert np.array_equal(np.array([0, 0, 1, 0, 0, 0, 0, 0]),
+                                    f_103('T','S','S'))
+    assert np.array_equal(np.array([0, 0, 0, 1, 0, 0, 0, 0]),
+                                    f_103('T','T','S'))
+    # # test F104
+    assert np.array_equal(np.array([1, 0, 0, 0]),
+                                    f_104('S','S'))
+    assert np.array_equal(np.array([0, 1, 0, 0]),
+                                    f_104('T','S'))
+    # # test F105
+    assert np.array_equal(np.array([1, 0]),
+                          f_105('S'))
+    assert np.array_equal(np.array([0, 1]),
+                          f_105('T'))
+    # test sparse vector
+    vec_list = [f_103('T','T','S'),f_105('S'),f_100('roy','T')]
+    assert  np.array_equal([[0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]],
+    sparse_vec_hstack(vec_list).todense())
 
     print('PASS')
