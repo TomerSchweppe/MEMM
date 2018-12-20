@@ -3,9 +3,11 @@
 import numpy as np
 from features import *
 from scipy import sparse
+from scipy import optimize
 import argparse
 from threading import Thread
 import itertools
+import loss
 
 import time
 
@@ -131,6 +133,10 @@ def rare(vocab_list,data):
         if vocab_dict[word] < RARE_THRESHOLD:
             vocab_list.remove(word)
 
+def feature_vec_len(spr_mats):
+    return spr_mats[0][0].shape[1]
+
+
 if __name__ == '__main__':
     # read input arguments
     train_file = None
@@ -157,8 +163,15 @@ if __name__ == '__main__':
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_arr = extract_features(vocab_list,tag_list,data,8)
+    spr_mats = extract_features(vocab_list,tag_list,data,8)
     print('extract time: ',time.time()-start)
 
+    # training
+    print('run training')
+    start = time.time()
 
-    print('loss: ',loss_function(spr_arr,spr_arr))
+    x_0 = np.zeros(feature_vec_len(spr_mats)) # initial guess shape (n,)
+    print(x_0)
+    #v = optimize.minimize(loss_function,x0=x_0,args=spr_mat,method='BFGS',jac=dloss_dv,maxiter=10)
+    print('training time: ',time.time()-start)
+    #print('loss: ',loss_function(spr_arr,spr_arr))
