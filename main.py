@@ -9,6 +9,9 @@ import itertools
 
 import time
 
+RARE_THRESHOLD = 3
+LAMBDA = 0.1
+
 def load_data(train_file):
     """
     load training data
@@ -52,6 +55,8 @@ def extract_features(vocab_list,tag_list,data,threads):
     extract features from training data
     """
 
+    data = data[:8]
+
     # divide data into chunks
     sentence_batch_size = len(data)//threads
     chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
@@ -90,20 +95,41 @@ def extract_features_thread(vocab_list,tag_list,data,spr_mats):
     f_104 = F104(vocab_list, tag_list)
     f_105 = F105(vocab_list, tag_list)
 
+    tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
+
     # collect sparse matrices for each word/tag pair
     for sentence in data:
         for idx, (word, tag) in enumerate(sentence):
+            spr_tag_list = []
+            for tag_i in tag_list:
+                vec_list = [f_100(word,tag_i),
+                        f_101_1(word,tag_i), f_101_2(word,tag_i), f_101_3(word,tag_i), f_101_4(word,tag_i),
+                        f_102_1(word,tag_i), f_102_2(word,tag_i), f_102_3(word,tag_i), f_102_4(word,tag_i),
+                        f_103(index_sentence_tag(sentence, idx - 2), index_sentence_tag(sentence, idx - 1),tag_i),
+                        f_104(index_sentence_tag(sentence, idx - 1),tag_i),
+                        f_105(tag_i),
+                        f_100(index_sentence_word(sentence, idx - 1),tag_i), # F106
+                        f_100(index_sentence_word(sentence, idx + 1),tag_i)] # F107
+                spr_tag_list.append(sparse_vec_hstack(vec_list))
+            spr_mats.append((sparse.vstack(spr_tag_list),tag_idx_dict[tag]))
 
-            vec_list = [f_100(word,tag),
-                        f_101_1(word,tag), f_101_2(word,tag), f_101_3(word,tag), f_101_4(word,tag),
-                        f_102_1(word,tag), f_102_2(word,tag), f_102_3(word,tag), f_102_4(word,tag),
-                        f_103(index_sentence_tag(sentence, idx - 2), index_sentence_tag(sentence, idx - 1),tag),
-                        f_104(index_sentence_tag(sentence, idx - 1),tag),
-                        f_105(tag),
-                        f_100(index_sentence_word(sentence, idx - 1),tag), # F106
-                        f_100(index_sentence_word(sentence, idx + 1),tag)] # F107
 
-            spr_mats.append(sparse_vec_hstack(vec_list))
+def rare(vocab_list,data):
+    """
+    remove rare words from vocab list
+    """
+    vocab_dict = {}
+
+    for sentence in data:
+        for (word, _) in sentence:
+            if word in vocab_dict:
+                vocab_dict[word]+=1
+            else:
+                vocab_dict[word]=0
+
+    for word in vocab_dict:
+        if vocab_dict[word] < RARE_THRESHOLD:
+            vocab_list.remove(word)
 
 if __name__ == '__main__':
     # read input arguments
@@ -124,9 +150,15 @@ if __name__ == '__main__':
     print('generate words and tags lists')
     vocab_list, tag_list = vocab_and_tag_lists(data)
 
+    # remove rare words from vocabulary
+    print('remove rare words from vocabulary')
+    rare(vocab_list,data)
+
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_arr = extract_features(vocab_list,tag_list,data,4)
-    print(len(spr_arr))
-    print(time.time()-start)
+    spr_arr = extract_features(vocab_list,tag_list,data,8)
+    print('extract time: ',time.time()-start)
+
+
+    print('loss: ',loss_function(spr_arr,spr_arr))

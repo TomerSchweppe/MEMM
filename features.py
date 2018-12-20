@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 
 import numpy as np
@@ -123,12 +124,12 @@ class F105(Feature):
         return self.feature_vec(0,1,tag)
 
 def sparse_vec_hstack(vec_list):
-    #spr_vec = sparse.csr_matrix(vec_list[0], dtype=bool)
-    spr_vec = vec_list[0]
-    for vec in vec_list[1:]:
-        #spr_vec = sparse.hstack((spr_vec, sparse.csr_matrix(vec, dtype=bool)))
-        spr_vec = np.hstack((spr_vec,vec))
-    return sparse.csr_matrix(spr_vec)
+    """
+    return sparse vector after hstack on numpy vector list
+    """
+    return sparse.csr_matrix(np.concatenate(vec_list),dtype=bool)
+
+
 
 if __name__ == '__main__':
     """
