@@ -7,7 +7,7 @@ from scipy import optimize
 import argparse
 from threading import Thread
 import itertools
-import loss
+from loss import *
 
 import time
 
@@ -174,11 +174,15 @@ if __name__ == '__main__':
     print('extract time: ', time.time() - start)
 
     # training
-    print('run training')
+    print('running training')
     start = time.time()
 
     x_0 = np.zeros(feature_vec_len(spr_mats))  # initial guess shape (n,)
-    print(x_0)
-    # v = optimize.minimize(loss_function,x0=x_0,args=spr_mat,method='BFGS',jac=dloss_dv,maxiter=10)
+
+    #loss_function(x_0, spr_mats)
+
+
+    v = optimize.minimize(loss_function,x0=x_0,args=spr_mats,method='L-BFGS-B',options={'maxiter' : 1})
     print('training time: ', time.time() - start)
+    print(v)
     # print('loss: ',loss_function(spr_arr,spr_arr))
