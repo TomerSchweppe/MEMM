@@ -15,7 +15,6 @@ import time
 RARE_THRESHOLD = 3
 
 
-
 def load_data(train_file):
     """
     load training data
@@ -23,17 +22,20 @@ def load_data(train_file):
     data = []
     with open(train_file, 'r') as fh:
         for line in fh:
-            data.append([('*', '*'),('*', '*')]+[tuple(word_tag.split('_')) for word_tag in line.strip().split()]+[('STOP', 'STOP')])
+            data.append([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
+                ('STOP', 'STOP')])
     return data
+
 
 def load_test(test_file):
     sentences = []
     tags = []
     with open(train_file, 'r') as fh:
         for line in fh:
-            word_tag= ([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [('STOP', 'STOP')])
-            sentences.append([word for (word,_) in word_tag])
-            tags.append([tag for (_,tag) in word_tag])
+            word_tag = ([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
+                ('STOP', 'STOP')])
+            sentences.append([word for (word, _) in word_tag])
+            tags.append([tag for (_, tag) in word_tag])
 
     return sentences, tags
 
@@ -51,15 +53,12 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-
-
-
 def extract_features(vocab_list, tag_list, data, threads):
     """
     extract features from training data
     """
 
-    data = data[:50]
+    data = data[:100]
 
     # divide data into chunks
     sentence_batch_size = len(data) // threads
@@ -106,9 +105,7 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
         for idx, (word, tag) in enumerate(sentence):
             spr_tag_list = []
 
-
             for tag_i in tag_list:
-
                 vec_list = [f_100(word, tag_i),
                             f_101_1(word, tag_i), f_101_2(word, tag_i), f_101_3(word, tag_i), f_101_4(word, tag_i),
                             f_102_1(word, tag_i), f_102_2(word, tag_i), f_102_3(word, tag_i), f_102_4(word, tag_i),
@@ -118,25 +115,9 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
                             f_100(index_sentence_word(sentence, idx - 1), tag_i),  # F106
                             f_100(index_sentence_word(sentence, idx + 1), tag_i)]  # F107
 
-                spr_tag_list.append(sparse_vec_hstack(vec_list))
-                #spr_tag_list.append(vec_list)
+                spr_tag_list.append(spr_feature_vec(vec_list))
 
             spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
-            #spr_mats.append(spr_tag_list)
-
-def big_mat(spr_mats,tag_list):
-    start = time.time()
-    t =[]
-    for r in range(len(tag_list)):
-        t.append(sparse.hstack(list(itertools.chain.from_iterable([pair[r] for pair in spr_mats]))))
-
-    sparse.vstack(t)
-    print(time.time()-start)
-    exit(0)
-    return sparse.vstack(t)
-
-
-
 
 
 def rare(vocab_list, data):
@@ -207,8 +188,6 @@ if __name__ == '__main__':
     spr_mats = extract_features(vocab_list, tag_list, data, 8)
     print('extract time: ', time.time() - start)
 
-    #big_mat(spr_mats, tag_list)
-
     # training
     print('running training')
     start = time.time()
@@ -230,6 +209,4 @@ if __name__ == '__main__':
     start = time.time()
     print(viterbi.run_viterbi(sentences[0]))
     print(test_tags[0])
-    print('viterbi time: ',time.time()-start)
-
-
+    print('viterbi time: ', time.time() - start)

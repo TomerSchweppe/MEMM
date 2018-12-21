@@ -58,17 +58,18 @@ class Viterbi:
         spr_tag_list = []
         for tag_i in self._tag_list:
             vec_list = [self._f_100(word, tag_i),
-                        self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i), self._f_101_4(word, tag_i),
-                        self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i), self._f_102_4(word, tag_i),
+                        self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
+                        self._f_101_4(word, tag_i),
+                        self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
+                        self._f_102_4(word, tag_i),
                         self._f_103(t_2, t_1, tag_i),
                         self._f_104(t_1, tag_i),
                         self._f_105(tag_i),
                         self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
                         self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
-            spr_tag_list.append(sparse_vec_hstack(vec_list))
+            spr_tag_list.append(spr_feature_vec(vec_list))
 
         return sparse.vstack(spr_tag_list).dot(self._v_train)
-
 
     def tag_pos(self, x, y):
         """
@@ -103,14 +104,13 @@ class Viterbi:
                     continue
                 if v == '*':
                     continue
-
-                values = pi[k-1,self._tag_idx_dict[u]:self._tag_idx_dict[u]+self._tags_num] + self.q(u, v, sentence, k)
+                values = pi[k - 1, self._tag_idx_dict[u]:self._tag_idx_dict[u] + self._tags_num] + self.q(u, v,
+                                                                                                          sentence, k)
 
                 # update pi & bp
                 max_pos = np.argmax(values)
                 pi[k, self.tag_pos(u, v)] = values[max_pos]
                 bp[k, self.tag_pos(u, v)] = max_pos
-
 
         # prediction
         pred_tag = [] * n

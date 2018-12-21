@@ -22,14 +22,14 @@ class Feature:
         pass
 
     def feature_vec(self, shift, step, tag):
-        vec = np.zeros([step * len(self._tag_list)], dtype=bool)
+        """
+        return tuple of '1' position and feature length
+        """
         tag_idx = self._tag_idx_dict.get(tag, None)
         if shift is None or tag_idx is None:
-            return vec
+            return (0, step * len(self._tag_list))
         pos = shift + tag_idx * step
-        vec[pos] = 1
-        return vec
-
+        return (pos, step * len(self._tag_list))
 
 class F100(Feature):
     """
@@ -137,12 +137,15 @@ class F105(Feature):
         return self.feature_vec(0, 1, tag)
 
 
-def sparse_vec_hstack(vec_list):
-    """
-    return sparse vector after hstack on numpy vector list
-    """
-    return sparse.csr_matrix(np.concatenate(vec_list), dtype=bool)
+def spr_feature_vec(vec_list):
+    jump = 0
+    col = []
+    for pos,window in vec_list:
+        col.append(pos+jump)
+        jump += window
+    data = np.ones(len(vec_list))
 
+    return sparse.csr_matrix((data,([0]*len(col),col)),shape=(1,jump),dtype=bool)
 
 if __name__ == '__main__':
     """
@@ -161,45 +164,48 @@ if __name__ == '__main__':
     f_105 = F105(vocab_list, tag_list)
 
     # test F100
-    assert np.array_equal(np.array([1, 0, 0, 0, 0, 0, 0, 0]),
-                          f_100('tomer', 'S'))
-    assert np.array_equal(np.array([0, 1, 0, 0, 0, 0, 0, 0]),
-                          f_100('ofir', 'S'))
-    assert np.array_equal(np.array([0, 0, 0, 0, 0, 0, 1, 0]),
-                          f_100('roy', 'T'))
-    assert np.array_equal(np.array([0, 0, 0, 0, 0, 0, 0, 1]),
-                          f_100('nadav', 'T'))
+
+    assert np.array_equal(np.array([[1, 0, 0, 0, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_100('tomer', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 1, 0, 0, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_100('ofir', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 0, 0, 0, 0, 0, 1, 0]]),
+                          spr_feature_vec([f_100('roy', 'T')]).todense())
+    assert np.array_equal(np.array([[0, 0, 0, 0, 0, 0, 0, 1]]),
+                          spr_feature_vec([f_100('nadav', 'T')]).todense())
+
     # # test F101
-    assert np.array_equal(f_101('tomer', 'S'), f_101('tomer' + 'not_prefix', 'S'))
-    assert np.array_equal(f_101('tomer', 'S'), f_101('t', 'S'))
-    assert not np.array_equal(f_101('tomer', 'S'), f_101('t', 'T'))
-    assert not np.array_equal(f_101('tomer', 'S'), f_101('ofir', 'S'))
+    assert np.array_equal( spr_feature_vec([f_101('tomer', 'S')]).todense(),  spr_feature_vec([f_101('tomer' + 'not_prefix', 'S')]).todense())
+    assert np.array_equal( spr_feature_vec([f_101('tomer', 'S')]).todense(),  spr_feature_vec([f_101('t', 'S')]).todense())
+    assert not np.array_equal( spr_feature_vec([f_101('tomer', 'S')]).todense(),  spr_feature_vec([f_101('t', 'T')]).todense())
+    assert not np.array_equal( spr_feature_vec([f_101('tomer', 'S')]).todense(),  spr_feature_vec([f_101('ofir', 'S')]).todense())
     # # test F102
-    assert np.array_equal(f_102('tomer', 'S'), f_102('not_suffix' + 'tomer', 'S'))
-    assert np.array_equal(f_102('tomer', 'S'), f_102('r', 'S'))
-    assert np.array_equal(f_102('tomer', 'S'), f_102('ofir', 'S'))
-    # # test F103
-    assert np.array_equal(np.array([1, 0, 0, 0, 0, 0, 0, 0]),
-                          f_103('S', 'S', 'S'))
-    assert np.array_equal(np.array([0, 1, 0, 0, 0, 0, 0, 0]),
-                          f_103('S', 'T', 'S'))
-    assert np.array_equal(np.array([0, 0, 1, 0, 0, 0, 0, 0]),
-                          f_103('T', 'S', 'S'))
-    assert np.array_equal(np.array([0, 0, 0, 1, 0, 0, 0, 0]),
-                          f_103('T', 'T', 'S'))
+    assert np.array_equal(spr_feature_vec([f_102('tomer', 'S')]).todense(),  spr_feature_vec([f_102('not_suffix' + 'tomer', 'S')]).todense())
+    assert np.array_equal( spr_feature_vec([f_102('tomer', 'S')]).todense(),  spr_feature_vec([f_102('r', 'S')]).todense())
+    assert np.array_equal( spr_feature_vec([f_102('tomer', 'S')]).todense(),  spr_feature_vec([f_102('ofir', 'S')]).todense())
+    # test F103
+    assert np.array_equal(np.array([[1, 0, 0, 0, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_103('S', 'S', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 1, 0, 0, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_103('S', 'T', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 0, 1, 0, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_103('T', 'S', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 0, 0, 1, 0, 0, 0, 0]]),
+                          spr_feature_vec([f_103('T', 'T', 'S')]).todense())
     # # test F104
-    assert np.array_equal(np.array([1, 0, 0, 0]),
-                          f_104('S', 'S'))
-    assert np.array_equal(np.array([0, 1, 0, 0]),
-                          f_104('T', 'S'))
+    assert np.array_equal(np.array([[1, 0, 0, 0]]),
+                          spr_feature_vec([f_104('S', 'S')]).todense())
+    assert np.array_equal(np.array([[0, 1, 0, 0]]),
+                          spr_feature_vec([f_104('T', 'S')]).todense())
     # # test F105
-    assert np.array_equal(np.array([1, 0]),
-                          f_105('S'))
-    assert np.array_equal(np.array([0, 1]),
-                          f_105('T'))
+    assert np.array_equal(np.array([[1, 0]]),
+                          spr_feature_vec([f_105('S')]).todense())
+    assert np.array_equal(np.array([[0, 1]]),
+                          spr_feature_vec([f_105('T')]).todense())
+
     # test sparse vector
     vec_list = [f_103('T', 'T', 'S'), f_105('S'), f_100('roy', 'T')]
     assert np.array_equal([[0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]],
-                          sparse_vec_hstack(vec_list).todense())
+                          spr_feature_vec(vec_list).todense())
 
     print('PASS')
