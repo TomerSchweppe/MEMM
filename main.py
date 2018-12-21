@@ -8,10 +8,12 @@ import argparse
 from threading import Thread
 import itertools
 from loss import *
+from viterbi import *
 
 import time
 
 RARE_THRESHOLD = 3
+
 
 
 def load_data(train_file):
@@ -21,8 +23,19 @@ def load_data(train_file):
     data = []
     with open(train_file, 'r') as fh:
         for line in fh:
-            data.append([tuple(word_tag.split('_')) for word_tag in line.strip().split()])
+            data.append([('*', '*'),('*', '*')]+[tuple(word_tag.split('_')) for word_tag in line.strip().split()]+[('STOP', 'STOP')])
     return data
+
+def load_test(test_file):
+    sentences = []
+    tags = []
+    with open(train_file, 'r') as fh:
+        for line in fh:
+            word_tag= ([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [('STOP', 'STOP')])
+            sentences.append([word for (word,_) in word_tag])
+            tags.append([tag for (_,tag) in word_tag])
+
+    return sentences, tags
 
 
 def vocab_and_tag_lists(data):
@@ -38,22 +51,7 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-def index_sentence_word(sentence, idx):
-    """
-    safe indexing of sentence word
-    """
-    if idx < 0 or idx >= len(sentence):
-        return None
-    return sentence[idx][0]
 
-
-def index_sentence_tag(sentence, idx):
-    """
-    safe indexing of sentence tag 
-    """
-    if idx < 0 or idx >= len(sentence):
-        return None
-    return sentence[idx][1]
 
 
 def extract_features(vocab_list, tag_list, data, threads):
@@ -61,7 +59,7 @@ def extract_features(vocab_list, tag_list, data, threads):
     extract features from training data
     """
 
-    data = data[:8]
+    data = data[:50]
 
     # divide data into chunks
     sentence_batch_size = len(data) // threads
@@ -87,7 +85,6 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
     """
     extract features from data chunk
     """
-
     # init feature classes
     f_100 = F100(vocab_list, tag_list)
     f_101_1 = F101(vocab_list, tag_list, 1)
@@ -108,7 +105,10 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
     for sentence in data:
         for idx, (word, tag) in enumerate(sentence):
             spr_tag_list = []
+
+
             for tag_i in tag_list:
+
                 vec_list = [f_100(word, tag_i),
                             f_101_1(word, tag_i), f_101_2(word, tag_i), f_101_3(word, tag_i), f_101_4(word, tag_i),
                             f_102_1(word, tag_i), f_102_2(word, tag_i), f_102_3(word, tag_i), f_102_4(word, tag_i),
@@ -117,8 +117,26 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
                             f_105(tag_i),
                             f_100(index_sentence_word(sentence, idx - 1), tag_i),  # F106
                             f_100(index_sentence_word(sentence, idx + 1), tag_i)]  # F107
+
                 spr_tag_list.append(sparse_vec_hstack(vec_list))
+                #spr_tag_list.append(vec_list)
+
             spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
+            #spr_mats.append(spr_tag_list)
+
+def big_mat(spr_mats,tag_list):
+    start = time.time()
+    t =[]
+    for r in range(len(tag_list)):
+        t.append(sparse.hstack(list(itertools.chain.from_iterable([pair[r] for pair in spr_mats]))))
+
+    sparse.vstack(t)
+    print(time.time()-start)
+    exit(0)
+    return sparse.vstack(t)
+
+
+
 
 
 def rare(vocab_list, data):
@@ -140,10 +158,16 @@ def rare(vocab_list, data):
 
 
 def feature_vec_len(spr_mats):
+    """
+    return feature vector bits num
+    """
     return spr_mats[0][0].shape[1]
 
 
 def get_args_for_optimize(spr_mats):
+    """
+    return arguments for optimization
+    """
     spr_mats_list, tag_idx_tup = zip(*spr_mats)
     spr_single_mat = sparse.vstack(spr_mats_list)
     args = (spr_single_mat, tag_idx_tup)
@@ -153,13 +177,17 @@ def get_args_for_optimize(spr_mats):
 if __name__ == '__main__':
     # read input arguments
     train_file = None
+    test_file = None
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file', help='training set file', default='train.wtag')
+    parser.add_argument('--test_file', help='test set file', default='test.wtag')
     args = parser.parse_args()
 
     if args.train_file:
         train_file = args.train_file
+    if args.test_file:
+        test_file = args.test_file
 
     # load training data
     print('loading data')
@@ -179,6 +207,8 @@ if __name__ == '__main__':
     spr_mats = extract_features(vocab_list, tag_list, data, 8)
     print('extract time: ', time.time() - start)
 
+    #big_mat(spr_mats, tag_list)
+
     # training
     print('running training')
     start = time.time()
@@ -186,7 +216,20 @@ if __name__ == '__main__':
 
     args = get_args_for_optimize(spr_mats)
 
+    print('optimize')
     v = optimize.minimize(loss_function_no_for, x0=x_0, args=args, jac=dloss_dv_no_for, method='L-BFGS-B')
     print('training time: ', time.time() - start)
     print(v)
-    # print('loss: ',loss_function(spr_arr,spr_arr))
+
+    # test data preprocessing
+    sentences, test_tags = load_test(test_file)
+
+    # run viterbi
+    print('running viterbi')
+    viterbi = Viterbi(tag_list, vocab_list, v.x)
+    start = time.time()
+    print(viterbi.run_viterbi(sentences[0]))
+    print(test_tags[0])
+    print('viterbi time: ',time.time()-start)
+
+
