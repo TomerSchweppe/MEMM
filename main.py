@@ -12,7 +12,6 @@ from loss import *
 import time
 
 RARE_THRESHOLD = 3
-LAMBDA = 0.1
 
 
 def load_data(train_file):
@@ -144,6 +143,13 @@ def feature_vec_len(spr_mats):
     return spr_mats[0][0].shape[1]
 
 
+def get_args_for_optimize(spr_mats):
+    spr_mats_list, tag_idx_tup = zip(*spr_mats)
+    spr_single_mat = sparse.vstack(spr_mats_list)
+    args = (spr_single_mat, tag_idx_tup)
+    return args
+
+
 if __name__ == '__main__':
     # read input arguments
     train_file = None
@@ -176,13 +182,11 @@ if __name__ == '__main__':
     # training
     print('running training')
     start = time.time()
+    x_0 = np.random.random(feature_vec_len(spr_mats))  # initial guess shape (n,)
 
-    x_0 = np.zeros(feature_vec_len(spr_mats))  # initial guess shape (n,)
+    args = get_args_for_optimize(spr_mats)
 
-    #loss_function(x_0, spr_mats)
-
-
-    v = optimize.minimize(loss_function,x0=x_0,args=spr_mats,method='L-BFGS-B',options={'maxiter' : 1})
+    v = optimize.minimize(loss_function_no_for, x0=x_0, args=args, jac=dloss_dv_no_for, method='L-BFGS-B')
     print('training time: ', time.time() - start)
     print(v)
     # print('loss: ',loss_function(spr_arr,spr_arr))
