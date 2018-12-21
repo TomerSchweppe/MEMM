@@ -145,7 +145,7 @@ def spr_feature_vec(vec_list):
         jump += window
     data = np.ones(len(vec_list))
 
-    return sparse.csr_matrix((data,([0]*len(col),col)),shape=(1,jump),dtype=bool)
+    return sparse.coo_matrix((data,([0]*len(col),col)),shape=(1,jump),dtype=bool)
 
 if __name__ == '__main__':
     """
