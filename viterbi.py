@@ -50,14 +50,12 @@ class Viterbi:
         self._f_104 = F104(vocab_list, tag_list)
         self._f_105 = F105(vocab_list, tag_list)
 
-    def q(self, t_2, t_1, sentence, k):
+    def q(self, t_2, t_1, tag_i, sentence, k):
         """
         q function
         """
         word = sentence[k]
-        spr_tag_list = []
-        for tag_i in self._tag_list:
-            vec_list = [self._f_100(word, tag_i),
+        vec_list = [self._f_100(word, tag_i),
                         self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
                         self._f_101_4(word, tag_i),
                         self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
@@ -67,9 +65,7 @@ class Viterbi:
                         self._f_105(tag_i),
                         self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
                         self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
-            spr_tag_list.append(spr_feature_vec(vec_list))
-
-        return sparse.vstack(spr_tag_list).dot(self._v_train)
+        return spr_feature_vec(vec_list).dot(self._v_train)
 
     def tag_pos(self, x, y):
         """
@@ -91,31 +87,41 @@ class Viterbi:
         """
 
         # init
-        n = len(sentence)
-        pi = np.zeros((n, self._tags_num ** 2))
+        n = len(sentence) - 1
+        pi = np.full((n, self._tags_num ** 2), -np.inf)
         bp = np.zeros((n, self._tags_num ** 2))
-        pi[0, self.tag_pos('*', '*')] = 1
+        pi[0, self.tag_pos('*', '*')] = 0
 
         # iterate words
-        for k in range(2, n):
+        print(n)
+        for k in range(1, n):
             # iterate u,v
+            start = time.time()
+            time_accum = 0
             for u, v in [(x, y) for x in self._tag_list for y in self._tag_list]:
-                if (u == '*' and k != 2) or u == 'STOP':
+                if (u == '*' and k != 1) or u == 'STOP' or v == '*':
                     continue
-                if v == '*':
-                    continue
-                values = pi[k - 1, self._tag_idx_dict[u]:self._tag_idx_dict[u] + self._tags_num] + self.q(u, v,
-                                                                                                          sentence, k)
+                if u =='*':
+                    a=1
+                values = np.full(len(self._tag_list), -np.inf)
+                for i, t in enumerate(self._tag_list):
+                    if (pi[k - 1, self.tag_pos(t, u)] == -np.inf) or (t == '*' and k > 2) or (t == 'STOP'):
+                        continue
+                    inner_start = time.time()
+                    q = self.q(t, u, v, sentence, k)
+                    time_accum += time.time() - inner_start
+                    values[i] = pi[k - 1, self.tag_pos(t, u)] + q
 
                 # update pi & bp
                 max_pos = np.argmax(values)
                 pi[k, self.tag_pos(u, v)] = values[max_pos]
                 bp[k, self.tag_pos(u, v)] = max_pos
+            print(time.time() - start, time_accum)
 
         # prediction
-        pred_tag = [] * n
-        (pred_tag[-2], pred_tag[-1]) = self.pos_tags(np.argmax(pi[n, :]))
+        pred_tag = [0] * n
+        (pred_tag[-2], pred_tag[-1]) = self.pos_tags(np.argmax(pi[n - 1, :]))
         for k in range(n - 3, 1, -1):
-            pred_tag[k] = self._idx_tag_dict(bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])])
+            pred_tag[k] = self._idx_tag_dict[bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])]]
 
         return pred_tag
