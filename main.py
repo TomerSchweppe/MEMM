@@ -12,7 +12,7 @@ from viterbi import *
 
 import time
 
-RARE_THRESHOLD = 3
+RARE_THRESHOLD = 5
 
 
 def load_data(train_file):
@@ -53,7 +53,7 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-def extract_features(vocab_list, tag_list, data, threads):
+def extract_features(vocab_list, tag_list, data, threads=1):
     """
     extract features from training data
     """
@@ -120,7 +120,7 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
             spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
 
 
-def rare(vocab_list, data):
+def remove_rare_words(vocab_list, data):
     """
     remove rare words from vocab list
     """
@@ -151,6 +151,7 @@ def get_args_for_optimize(spr_mats):
     """
     spr_mats_list, tag_idx_tup = zip(*spr_mats)
     spr_single_mat = sparse.vstack(spr_mats_list)
+    spr_single_mat = spr_single_mat.tocsr()
     args = (spr_single_mat, tag_idx_tup)
     return args
 
@@ -180,7 +181,7 @@ if __name__ == '__main__':
 
     # remove rare words from vocabulary
     print('remove rare words from vocabulary')
-    rare(vocab_list, data)
+    remove_rare_words(vocab_list, data)
 
     # extract features from training data
     print('extract features from training data')
