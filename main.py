@@ -60,6 +60,9 @@ def extract_features(vocab_list, tag_list, data, threads=1):
 
     data = data[:100]
 
+    # Multithreading hurts performance!!!
+    threads = 1
+
     # divide data into chunks
     sentence_batch_size = len(data) // threads
     chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
