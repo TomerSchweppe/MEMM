@@ -60,7 +60,6 @@ def extract_features(vocab_list, tag_list, data, processes_num):
     """
     extract features from training data
     """
-    data = data[:8]
 
     # divide data into chunks
     sentence_batch_size = len(data) // processes_num
@@ -265,7 +264,7 @@ if __name__ == '__main__':
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_mats = extract_features(vocab_list, tag_list, data, 8)
+    spr_mats = extract_features(vocab_list, tag_list, data, 4)
     print('extract time: ', time.time() - start)
 
     # training
@@ -286,8 +285,8 @@ if __name__ == '__main__':
     # run viterbi
     print('running viterbi')
     start = time.time()
-    tagger = parallel_viterbi(tag_list, vocab_list, v.x, data, sentences[:3], 1)
+    tagger = parallel_viterbi(tag_list, vocab_list, v.x, data, sentences, 4)
     print('viterbi time: ', time.time() - start)
 
     # evaluation
-    eval(tagger,[test_tags[0],test_tags[1],test_tags[2]],tag_list)
+    eval(tagger,test_tags,tag_list)
