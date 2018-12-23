@@ -189,7 +189,50 @@ def parallel_viterbi(tag_list, vocab_list, v_train, train_data, test_data, proce
     processes = Pool()
     ret = processes.map(batch_viterbi, [(viterbi,chunk) for chunk in chunks])
 
-    return ret
+    # combine results
+    return list(itertools.chain.from_iterable(ret))
+
+
+def eval(tagger, ground_truth, tag_list):
+    """
+    tagger evaluation
+    """
+
+    confusion_mat = np.zeros((len(tag_list),len(tag_list)),dtype=int)
+    tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
+    idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
+
+    for sentence in range(len(ground_truth)):
+        for actual_tag, predicted_tag in zip(ground_truth[sentence],tagger[sentence]):
+            if actual_tag == '*' or actual_tag == 'STOP':
+                continue
+            confusion_mat[tag_idx_dict[actual_tag],tag_idx_dict[predicted_tag]] += 1
+
+    # accuracy
+    print('tagger accuracy:', np.trace(confusion_mat)/np.sum(confusion_mat))
+    # 10 worst in confusion matrix
+    tmp = np.copy(confusion_mat)
+    np.fill_diagonal(tmp, 0)
+    rows = np.argsort(np.sum(tmp, axis=1))[-10:]
+
+    # confusion matrix - 10 worst predictions
+    print('confusion matrix - 10 worst predictions:')
+    print('      ',end='')
+    for tag in tag_list:
+        print(tag, end=' ')
+    print()
+
+    row_labels = []
+    for idx in rows:
+        row_labels.append(idx_tag_dict[idx])
+    for row_label, row in zip(row_labels, confusion_mat[rows,:]):
+        print (row_label.ljust(5),end='')
+        for i, val in enumerate(row):
+            if i == 0:
+                print(' ' + str(val), end='')
+            else:
+                print(' '*(len(tag_list[i-1]))+str(val),end='')
+        print()
 
 
 if __name__ == '__main__':
@@ -243,5 +286,8 @@ if __name__ == '__main__':
     # run viterbi
     print('running viterbi')
     start = time.time()
-    print(parallel_viterbi(tag_list, vocab_list, v.x, data, sentences[:1], 1))
+    tagger = parallel_viterbi(tag_list, vocab_list, v.x, data, sentences[:3], 1)
     print('viterbi time: ', time.time() - start)
+
+    # evaluation
+    eval(tagger,[test_tags[0],test_tags[1],test_tags[2]],tag_list)
