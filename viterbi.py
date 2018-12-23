@@ -26,7 +26,7 @@ class Viterbi:
     viterbi class
     """
 
-    def __init__(self, tag_list, vocab_list, v_train,tag_pairs):
+    def __init__(self, tag_list, vocab_list, v_train, tag_pairs):
         """
         create tag-idx dictionaries
         """
@@ -57,23 +57,22 @@ class Viterbi:
         """
         word = sentence[k]
 
-
         vec_list = [self._f_100(word, tag_i),
-                        self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
-                        self._f_101_4(word, tag_i),
-                        self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
-                        self._f_102_4(word, tag_i),
-                        self._f_103(t_2, t_1, tag_i),
-                        self._f_104(t_1, tag_i),
-                        self._f_105(tag_i),
-                        self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
-                        self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
+                    self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
+                    self._f_101_4(word, tag_i),
+                    self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
+                    self._f_102_4(word, tag_i),
+                    self._f_103(t_2, t_1, tag_i),
+                    self._f_104(t_1, tag_i),
+                    self._f_105(tag_i),
+                    self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
+                    self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
 
         sum = 0
         jump = 0
-        for pos,window in vec_list:
+        for pos, window in vec_list:
             if pos >= 0:
-                sum += self._v_train[pos+jump]
+                sum += self._v_train[pos + jump]
             jump += window
 
         return sum
@@ -92,7 +91,7 @@ class Viterbi:
         y_idx = idx % self._tags_num
         return self._idx_tag_dict[x_idx], self._idx_tag_dict[y_idx]
 
-    def run_viterbi(self, sentence):
+    def run_viterbi(self, sentence, beam_size=20):
         """
         run viterbi on sentence
         """
@@ -120,6 +119,10 @@ class Viterbi:
                 max_pos = np.argmax(values)
                 pi[k, self.tag_pos(u, v)] = values[max_pos]
                 bp[k, self.tag_pos(u, v)] = max_pos
+            # beam search
+            pi_k = pi[k, :]
+            threshold = pi_k[np.argpartition(pi_k, len(pi_k) - beam_size)[len(pi_k) - beam_size]]
+            pi[k, :] = np.where(pi_k >= threshold, pi_k, -np.inf)
 
         # prediction
         pred_tag = ['*'] * n
