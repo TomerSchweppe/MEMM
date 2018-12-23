@@ -26,7 +26,7 @@ class Viterbi:
     viterbi class
     """
 
-    def __init__(self, tag_list, vocab_list, v_train):
+    def __init__(self, tag_list, vocab_list, v_train,tag_pairs):
         """
         create tag-idx dictionaries
         """
@@ -35,6 +35,7 @@ class Viterbi:
         self._idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
         self._tags_num = len(self._tag_idx_dict)
         self._v_train = v_train
+        self._tag_pairs = tag_pairs
 
         # init feature classes
         self._f_100 = F100(vocab_list, tag_list)
@@ -56,6 +57,7 @@ class Viterbi:
         """
         word = sentence[k]
 
+
         vec_list = [self._f_100(word, tag_i),
                         self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
                         self._f_101_4(word, tag_i),
@@ -66,6 +68,7 @@ class Viterbi:
                         self._f_105(tag_i),
                         self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
                         self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
+
         sum = 0
         jump = 0
         for pos,window in vec_list:
@@ -103,14 +106,9 @@ class Viterbi:
         # iterate words
         for k in range(1, n):
             # iterate u,v
-
-            for u, v in [(x, y) for x in self._tag_list for y in self._tag_list]:
-
+            for u, v in self._tag_pairs:
                 if (u == '*' and k != 1) or u == 'STOP' or v == '*':
                     continue
-                if v =='*':
-                    continue
-
 
                 values = np.full(len(self._tag_list), -np.inf)
 
@@ -128,11 +126,10 @@ class Viterbi:
                 bp[k, self.tag_pos(u, v)] = max_pos
 
 
-
         # prediction
-        pred_tag = [0] * n
+        pred_tag = ['*'] * n
         (pred_tag[-2], pred_tag[-1]) = self.pos_tags(np.argmax(pi[n - 1, :]))
         for k in range(n - 3, 1, -1):
             pred_tag[k] = self._idx_tag_dict[bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])]]
-
+        pred_tag.append('STOP')
         return pred_tag

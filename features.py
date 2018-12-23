@@ -16,6 +16,7 @@ class Feature:
         self._tag_list = tag_list
         self._word_idx_dict = {word: idx for idx, word in enumerate(vocab_list)}
         self._tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
+        self._tags_num = len(tag_list)
 
     def __call__(self):
         """call function"""
@@ -27,9 +28,9 @@ class Feature:
         """
         tag_idx = self._tag_idx_dict.get(tag, None)
         if shift is None or tag_idx is None:
-            return (-1, step * len(self._tag_list))
+            return (-1, step * self._tags_num)
         pos = shift + tag_idx * step
-        return (pos, step * len(self._tag_list))
+        return (pos, step * self._tags_num)
 
 
 class F100(Feature):
@@ -100,12 +101,12 @@ class F103(Feature):
     def __init__(self, vocab_list, tag_list):
         """create tag pairs hash table"""
         super(F103, self).__init__(vocab_list, tag_list)
-        self._tags_idx_dict = {(tag1, tag2): idx2 + idx1 * len(tag_list) for idx1, tag1 in enumerate(tag_list) for
+        self._tags_idx_dict = {(tag1, tag2): idx2 + idx1 * self._tags_num for idx1, tag1 in enumerate(tag_list) for
                                idx2, tag2 in enumerate(tag_list)}
 
     def __call__(self, t_2, t_1, tag):
         "return F103 feature matrix"
-        return self.feature_vec(self._tags_idx_dict.get((t_2, t_1), None), len(self._tag_list) * len(self._tag_list),
+        return self.feature_vec(self._tags_idx_dict.get((t_2, t_1), None), self._tags_num * self._tags_num,
                                 tag)
 
 
@@ -121,7 +122,7 @@ class F104(Feature):
 
     def __call__(self, t_1, tag):
         """return F104 feature matrix"""
-        return self.feature_vec(self._tag_idx_dict.get(t_1, None), len(self._tag_list), tag)
+        return self.feature_vec(self._tag_idx_dict.get(t_1, None), self._tags_num, tag)
 
 
 class F105(Feature):
@@ -139,6 +140,9 @@ class F105(Feature):
 
 
 def spr_feature_vec(vec_list):
+    """
+    return sparse vector of vector list 
+    """
     jump = 0
     col = []
     data_length = 0

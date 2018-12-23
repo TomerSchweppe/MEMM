@@ -12,7 +12,7 @@ from viterbi import *
 
 import time
 
-RARE_THRESHOLD = 5
+RARE_THRESHOLD = 3
 
 
 def load_data(train_file):
@@ -28,6 +28,9 @@ def load_data(train_file):
 
 
 def load_test(test_file):
+    """
+    load test data
+    """
     sentences = []
     tags = []
     with open(train_file, 'r') as fh:
@@ -57,7 +60,7 @@ def extract_features(vocab_list, tag_list, data, processes_num):
     """
     extract features from training data
     """
-    data = data[:5000]
+    data = data[:8]
 
     # divide data into chunks
     sentence_batch_size = len(data) // processes_num
@@ -65,7 +68,7 @@ def extract_features(vocab_list, tag_list, data, processes_num):
 
     # run processes
     processes = Pool()
-    ret = processes.map(extract_features_thread, [(vocab_list, tag_list, chunk) for idx, chunk in enumerate(chunks)])
+    ret = processes.map(extract_features_thread, [(vocab_list, tag_list, chunk) for chunk in chunks])
 
     # combine results
     return list(itertools.chain.from_iterable(ret))
@@ -149,6 +152,45 @@ def get_args_for_optimize(spr_mats):
     args = (spr_single_mat, tag_idx_tup)
     return args
 
+def tag_pairs(data):
+    """
+    return tag pairs seen in data 
+    """
+    tag_pairs_set = set()
+    for sentence in data:
+        prev_tag = '*'
+        for _,tag in sentence[2:]:
+            tag_pairs_set.add((prev_tag,tag))
+            prev_tag = tag
+
+    return tag_pairs_set
+
+def batch_viterbi(args):
+    """
+    run viterbi on sentences batch
+    """
+    viterbi,chunk = args
+    res = []
+    for sentence in chunk:
+        res.append(viterbi.run_viterbi(sentence))
+    return res
+
+def parallel_viterbi(tag_list, vocab_list, v_train, train_data, test_data, processes_num):
+    """
+    parallel viterbi
+    """
+    # create viterbi class
+    viterbi = Viterbi(tag_list, vocab_list, v.x, tag_pairs(train_data))
+
+    # divide data into chunks
+    sentence_batch_size = len(test_data) // processes_num
+    chunks = [test_data[idx:idx + sentence_batch_size] for idx in range(0, len(test_data), sentence_batch_size)]
+
+    processes = Pool()
+    ret = processes.map(batch_viterbi, [(viterbi,chunk) for chunk in chunks])
+
+    return ret
+
 
 if __name__ == '__main__':
     # read input arguments
@@ -180,7 +222,7 @@ if __name__ == '__main__':
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_mats = extract_features(vocab_list, tag_list, data, 4)
+    spr_mats = extract_features(vocab_list, tag_list, data, 8)
     print('extract time: ', time.time() - start)
 
     # training
@@ -200,8 +242,6 @@ if __name__ == '__main__':
 
     # run viterbi
     print('running viterbi')
-    viterbi = Viterbi(tag_list, vocab_list, v.x)
     start = time.time()
-    print(viterbi.run_viterbi(sentences[0]))
-    print(test_tags[0])
+    print(parallel_viterbi(tag_list, vocab_list, v.x, data, sentences[:1], 1))
     print('viterbi time: ', time.time() - start)
