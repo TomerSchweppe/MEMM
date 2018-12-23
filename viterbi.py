@@ -96,7 +96,6 @@ class Viterbi:
         """
         run viterbi on sentence
         """
-
         # init
         n = len(sentence) - 1
         pi = np.full((n, self._tags_num ** 2), -np.inf)
@@ -111,20 +110,16 @@ class Viterbi:
                     continue
 
                 values = np.full(len(self._tag_list), -np.inf)
-
                 for i, t in enumerate(self._tag_list):
                     if (pi[k - 1, self.tag_pos(t, u)] == -np.inf) or (t == '*' and k > 2) or (t == 'STOP'):
                         continue
-
                     q = self.q(t, u, v, sentence, k)
                     values[i] = pi[k - 1, self.tag_pos(t, u)] + q
 
                 # update pi & bp
-
                 max_pos = np.argmax(values)
                 pi[k, self.tag_pos(u, v)] = values[max_pos]
                 bp[k, self.tag_pos(u, v)] = max_pos
-
 
         # prediction
         pred_tag = ['*'] * n

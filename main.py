@@ -5,9 +5,10 @@ from features import *
 from scipy import sparse
 from scipy import optimize
 import argparse
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 import itertools
 from loss import *
+import pickle
 from viterbi import *
 
 import time
@@ -56,11 +57,10 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-def extract_features(vocab_list, tag_list, data, processes_num):
+def extract_features(vocab_list, tag_list, data, processes_num=1):
     """
     extract features from training data
     """
-    data = data[:8]
 
     # divide data into chunks
     sentence_batch_size = len(data) // processes_num
@@ -211,6 +211,8 @@ if __name__ == '__main__':
     print('loading data')
     data = load_data(train_file)
 
+    # data = data[:100]
+
     # word & tag lists
     print('generate words and tags lists')
     vocab_list, tag_list = vocab_and_tag_lists(data)
@@ -222,7 +224,7 @@ if __name__ == '__main__':
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_mats = extract_features(vocab_list, tag_list, data, 8)
+    spr_mats = extract_features(vocab_list, tag_list, data, cpu_count())
     print('extract time: ', time.time() - start)
 
     # training
