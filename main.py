@@ -5,7 +5,7 @@ from features import *
 from scipy import sparse
 from scipy import optimize
 import argparse
-from threading import Thread
+from multiprocessing import Pool
 import itertools
 from loss import *
 from viterbi import *
@@ -53,40 +53,30 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-def extract_features(vocab_list, tag_list, data, threads=1):
+def extract_features(vocab_list, tag_list, data, processes_num):
     """
     extract features from training data
     """
-
-    data = data[:100]
-
-    # Multithreading hurts performance!!!
-    threads = 1
+    data = data[:5000]
 
     # divide data into chunks
-    sentence_batch_size = len(data) // threads
+    sentence_batch_size = len(data) // processes_num
     chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
-    threads = []
-    spr_mats = [[] for _ in range(len(chunks))]
 
-    # run threads
-    for idx, chunk in enumerate(chunks):
-        thread = Thread(target=extract_features_thread, args=(vocab_list, tag_list, chunk, spr_mats[idx]))
-        thread.start()
-        threads.append(thread)
-
-    # wait for threads to finish
-    for thread in threads:
-        thread.join()
+    # run processes
+    processes = Pool()
+    ret = processes.map(extract_features_thread, [(vocab_list, tag_list, chunk) for idx, chunk in enumerate(chunks)])
 
     # combine results
-    return list(itertools.chain.from_iterable(spr_mats))
+    return list(itertools.chain.from_iterable(ret))
 
 
-def extract_features_thread(vocab_list, tag_list, data, spr_mats):
+def extract_features_thread(args):
     """
     extract features from data chunk
     """
+    vocab_list, tag_list, data = args
+
     # init feature classes
     f_100 = F100(vocab_list, tag_list)
     f_101_1 = F101(vocab_list, tag_list, 1)
@@ -102,7 +92,7 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
     f_105 = F105(vocab_list, tag_list)
 
     tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
-
+    spr_mats = []
     # collect sparse matrices for each word/tag pair
     for sentence in data:
         for idx, (word, tag) in enumerate(sentence):
@@ -121,6 +111,7 @@ def extract_features_thread(vocab_list, tag_list, data, spr_mats):
                 spr_tag_list.append(spr_feature_vec(vec_list))
 
             spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
+    return spr_mats
 
 
 def remove_rare_words(vocab_list, data):
@@ -189,7 +180,7 @@ if __name__ == '__main__':
     # extract features from training data
     print('extract features from training data')
     start = time.time()
-    spr_mats = extract_features(vocab_list, tag_list, data, 8)
+    spr_mats = extract_features(vocab_list, tag_list, data, 4)
     print('extract time: ', time.time() - start)
 
     # training

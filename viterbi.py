@@ -55,6 +55,7 @@ class Viterbi:
         q function
         """
         word = sentence[k]
+
         vec_list = [self._f_100(word, tag_i),
                         self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
                         self._f_101_4(word, tag_i),
@@ -65,7 +66,15 @@ class Viterbi:
                         self._f_105(tag_i),
                         self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
                         self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
-        return spr_feature_vec(vec_list).dot(self._v_train)
+
+        sum = 0
+        jump = 0
+        for pos,window in vec_list:
+            if pos >= 0:
+                sum += self._v_train[pos+jump]
+            jump += window
+
+        return sum
 
     def tag_pos(self, x, y):
         """
@@ -85,7 +94,6 @@ class Viterbi:
         """
         run viterbi on sentence
         """
-
         # init
         n = len(sentence) - 1
         pi = np.full((n, self._tags_num ** 2), -np.inf)
@@ -93,33 +101,25 @@ class Viterbi:
         pi[0, self.tag_pos('*', '*')] = 0
 
         # iterate words
-        print(n)
         for k in range(1, n):
             # iterate u,v
-            start = time.time()
-            time_accum = 0
             for u, v in [(x, y) for x in self._tag_list for y in self._tag_list]:
                 if (u == '*' and k != 1) or u == 'STOP' or v == '*':
                     continue
-                if u =='*':
-                    a=1
                 values = np.full(len(self._tag_list), -np.inf)
                 for i, t in enumerate(self._tag_list):
                     if (pi[k - 1, self.tag_pos(t, u)] == -np.inf) or (t == '*' and k > 2) or (t == 'STOP'):
                         continue
-                    inner_start = time.time()
                     q = self.q(t, u, v, sentence, k)
-                    time_accum += time.time() - inner_start
                     values[i] = pi[k - 1, self.tag_pos(t, u)] + q
 
                 # update pi & bp
                 max_pos = np.argmax(values)
                 pi[k, self.tag_pos(u, v)] = values[max_pos]
                 bp[k, self.tag_pos(u, v)] = max_pos
-            print(time.time() - start, time_accum)
 
         # prediction
-        pred_tag = [0] * n
+        pred_tag = ['*'] * n
         (pred_tag[-2], pred_tag[-1]) = self.pos_tags(np.argmax(pi[n - 1, :]))
         for k in range(n - 3, 1, -1):
             pred_tag[k] = self._idx_tag_dict[bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])]]
