@@ -5,6 +5,7 @@ from features import *
 from scipy import sparse
 from scipy import optimize
 import argparse
+import os
 from multiprocessing import Pool, cpu_count
 import itertools
 from loss import *
@@ -12,8 +13,6 @@ import pickle
 from viterbi import *
 
 import time
-
-RARE_THRESHOLD = 3
 
 
 def load_data(train_file):
@@ -117,7 +116,7 @@ def extract_features_thread(args):
     return spr_mats
 
 
-def remove_rare_words(vocab_list, data):
+def remove_rare_words(vocab_list, data, threshold):
     """
     remove rare words from vocab list
     """
@@ -131,7 +130,7 @@ def remove_rare_words(vocab_list, data):
                 vocab_dict[word] = 0
 
     for word in vocab_dict:
-        if vocab_dict[word] < RARE_THRESHOLD:
+        if vocab_dict[word] < threshold:
             vocab_list.remove(word)
 
 
@@ -142,15 +141,16 @@ def feature_vec_len(spr_mats):
     return spr_mats[0][0].shape[1]
 
 
-def get_args_for_optimize(spr_mats):
+def get_args_for_optimize(spr_mats, Lambda):
     """
     return arguments for optimization
     """
     spr_mats_list, tag_idx_tup = zip(*spr_mats)
     spr_single_mat = sparse.vstack(spr_mats_list)
     spr_single_mat = spr_single_mat.tocsr()
-    args = (spr_single_mat, tag_idx_tup)
+    args = (spr_single_mat, tag_idx_tup, Lambda)
     return args
+
 
 def tag_pairs(data):
     """
@@ -159,35 +159,34 @@ def tag_pairs(data):
     tag_pairs_set = set()
     for sentence in data:
         prev_tag = '*'
-        for _,tag in sentence[2:]:
-            tag_pairs_set.add((prev_tag,tag))
+        for _, tag in sentence[2:]:
+            tag_pairs_set.add((prev_tag, tag))
             prev_tag = tag
 
     return tag_pairs_set
+
 
 def batch_viterbi(args):
     """
     run viterbi on sentences batch
     """
-    viterbi,chunk = args
+    viterbi, chunk = args
     res = []
     for sentence in chunk:
         res.append(viterbi.run_viterbi(sentence))
     return res
 
-def parallel_viterbi(tag_list, vocab_list, v_train, train_data, test_data, processes_num):
+
+def parallel_viterbi(trained_viterbi, test_data, processes_num=1):
     """
     parallel viterbi
     """
-    # create viterbi class
-    viterbi = Viterbi(tag_list, vocab_list, v.x, tag_pairs(train_data))
-
     # divide data into chunks
     sentence_batch_size = len(test_data) // processes_num
     chunks = [test_data[idx:idx + sentence_batch_size] for idx in range(0, len(test_data), sentence_batch_size)]
 
     processes = Pool()
-    ret = processes.map(batch_viterbi, [(viterbi,chunk) for chunk in chunks])
+    ret = processes.map(batch_viterbi, [(trained_viterbi, chunk) for chunk in chunks])
 
     # combine results
     return list(itertools.chain.from_iterable(ret))
@@ -198,18 +197,18 @@ def eval(tagger, ground_truth, tag_list):
     tagger evaluation
     """
 
-    confusion_mat = np.zeros((len(tag_list),len(tag_list)),dtype=int)
+    confusion_mat = np.zeros((len(tag_list), len(tag_list)), dtype=int)
     tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
     idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
 
     for sentence in range(len(ground_truth)):
-        for actual_tag, predicted_tag in zip(ground_truth[sentence],tagger[sentence]):
+        for actual_tag, predicted_tag in zip(ground_truth[sentence], tagger[sentence]):
             if actual_tag == '*' or actual_tag == 'STOP':
                 continue
-            confusion_mat[tag_idx_dict[actual_tag],tag_idx_dict[predicted_tag]] += 1
+            confusion_mat[tag_idx_dict[actual_tag], tag_idx_dict[predicted_tag]] += 1
 
     # accuracy
-    print('tagger accuracy:', np.trace(confusion_mat)/np.sum(confusion_mat))
+    print('tagger accuracy:', np.trace(confusion_mat) / np.sum(confusion_mat))
     # 10 worst in confusion matrix
     tmp = np.copy(confusion_mat)
     np.fill_diagonal(tmp, 0)
@@ -217,7 +216,7 @@ def eval(tagger, ground_truth, tag_list):
 
     # confusion matrix - 10 worst predictions
     print('confusion matrix - 10 worst predictions:')
-    print('      ',end='')
+    print('      ', end='')
     for tag in tag_list:
         print(tag, end=' ')
     print()
@@ -225,36 +224,43 @@ def eval(tagger, ground_truth, tag_list):
     row_labels = []
     for idx in rows:
         row_labels.append(idx_tag_dict[idx])
-    for row_label, row in zip(row_labels, confusion_mat[rows,:]):
-        print (row_label.ljust(5),end='')
+    for row_label, row in zip(row_labels, confusion_mat[rows, :]):
+        print(row_label.ljust(5), end='')
         for i, val in enumerate(row):
             if i == 0:
                 print(' ' + str(val), end='')
             else:
-                print(' '*(len(tag_list[i-1]))+str(val),end='')
+                print(' ' * (len(tag_list[i - 1])) + str(val), end='')
         print()
 
 
 if __name__ == '__main__':
     # read input arguments
-    train_file = None
-    test_file = None
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file', help='training set file', default='train.wtag')
     parser.add_argument('--test_file', help='test set file', default='test.wtag')
+    parser.add_argument('--model_file', help='trained model will be saved to this location, inference will load the '
+                                             'model for this location', default='cache/model.pickle')
+    parser.add_argument('--rare_threshold', type=int, help='words with term frequency under this threshold shall be '
+                                                           'treated as unknowns', default=3)
+    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10**(-2))
     args = parser.parse_args()
 
     if args.train_file:
         train_file = args.train_file
     if args.test_file:
         test_file = args.test_file
+    if args.model_file:
+        model_file = args.model_file
+    if args.rare_threshold < 0:
+        raise ValueError('invalid rare_threshold = %d < 0' % args.rare_threshold)
+    rare_threshold = args.rare_threshold
 
     # load training data
     print('loading data')
     data = load_data(train_file)
 
-    # data = data[:100]
+    # data = data[:200]
 
     # word & tag lists
     print('generate words and tags lists')
@@ -262,7 +268,7 @@ if __name__ == '__main__':
 
     # remove rare words from vocabulary
     print('remove rare words from vocabulary')
-    remove_rare_words(vocab_list, data)
+    remove_rare_words(vocab_list, data, rare_threshold)
 
     # extract features from training data
     print('extract features from training data')
@@ -275,20 +281,27 @@ if __name__ == '__main__':
     start = time.time()
     x_0 = np.random.random(feature_vec_len(spr_mats))  # initial guess shape (n,)
 
-    args = get_args_for_optimize(spr_mats)
+    optimize_args = get_args_for_optimize(spr_mats, args.Lambda)
 
     print('optimize')
-    v = optimize.minimize(loss_function_no_for, x0=x_0, args=args, jac=dloss_dv_no_for, method='L-BFGS-B')
+    v = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for, method='L-BFGS-B')
     print('training time: ', time.time() - start)
     print(v)
+
+    # save trained model
+    os.makedirs(os.path.dirname(model_file), exist_ok=True)
+    pickle.dump(Viterbi(tag_list, vocab_list, v.x, tag_pairs(data)), open(model_file, 'wb'))
 
     # test data preprocessing
     sentences, test_tags = load_test(test_file)
 
+    # load saved model
+    viterbi = pickle.load(open(model_file, 'rb'))
+
     # run viterbi
     print('running viterbi')
     start = time.time()
-    tagger = parallel_viterbi(tag_list, vocab_list, v.x, data, sentences, 4)
+    tagger = parallel_viterbi(viterbi, sentences, cpu_count())
     print('viterbi time: ', time.time() - start)
 
     # evaluation
