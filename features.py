@@ -2,6 +2,8 @@
 
 import numpy as np
 from scipy import sparse
+from multiprocessing import Pool
+import itertools
 import time
 
 
@@ -139,6 +141,102 @@ class F105(Feature):
         return self.feature_vec(0, 1, tag)
 
 
+class StartCapital(Feature):
+    """
+    word starts with capital letter
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(StartCapital, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        if word[0].isupper:
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class AllCapital(Feature):
+    """
+    word contain only capital letters
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(AllCapital, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        if word.isupper:
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class Number(Feature):
+    """
+    word is a number
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(Number, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        if word.isdigit():
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class Features():
+    """
+    Features class
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        # init feature classes
+        self._f_100 = F100(vocab_list, tag_list)
+        self._f_101_1 = F101(vocab_list, tag_list, 1)
+        self._f_101_2 = F101(vocab_list, tag_list, 2)
+        self._f_101_3 = F101(vocab_list, tag_list, 3)
+        self._f_101_4 = F101(vocab_list, tag_list, 4)
+        self._f_102_1 = F102(vocab_list, tag_list, 1)
+        self._f_102_2 = F102(vocab_list, tag_list, 2)
+        self._f_102_3 = F102(vocab_list, tag_list, 3)
+        self._f_102_4 = F102(vocab_list, tag_list, 4)
+        self._f_103 = F103(vocab_list, tag_list)
+        self._f_104 = F104(vocab_list, tag_list)
+        self._f_105 = F105(vocab_list, tag_list)
+        self._start_capital = StartCapital(vocab_list, tag_list)
+        self._all_capital = AllCapital(vocab_list, tag_list)
+        self._number = Number(vocab_list, tag_list)
+
+    def __call__(self, prev_word, word, next_word, tag_2, tag_1, tag_i):
+        """
+        return list of all features
+        """
+        return [self._f_100(word, tag_i),
+                self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
+                self._f_101_4(word, tag_i),
+                self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
+                self._f_102_4(word, tag_i),
+                self._f_103(tag_2, tag_1, tag_i),
+                self._f_104(tag_1, tag_i),
+                self._f_105(tag_i),
+                self._f_100(prev_word, tag_i),  # F106
+                self._f_100(next_word, tag_i),  # F107
+                self._start_capital(word, tag_i),
+                self._all_capital(word, tag_i),
+                self._number(word, tag_i)]
+
+
 def spr_feature_vec(vec_list):
     """
     return sparse vector of vector list 
@@ -156,6 +254,67 @@ def spr_feature_vec(vec_list):
     return sparse.coo_matrix((data, ([0] * len(col), col)), shape=(1, jump), dtype=bool)
 
 
+def index_sentence_word(sentence, idx):
+    """
+    safe indexing of sentence word
+    """
+    if idx < 0 or idx >= len(sentence):
+        return None
+    return sentence[idx][0]
+
+
+def index_sentence_tag(sentence, idx):
+    """
+    safe indexing of sentence tag
+    """
+    if idx < 0 or idx >= len(sentence):
+        return None
+    return sentence[idx][1]
+
+
+def extract_features(vocab_list, tag_list, data, processes_num):
+    """
+    extract features from training data
+    """
+
+    # divide data into chunks
+    sentence_batch_size = len(data) // processes_num
+    chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
+
+    # init features
+    features = Features(vocab_list, tag_list)
+
+    # run processes
+    processes = Pool()
+    ret = processes.map(extract_features_thread, [(features, vocab_list, tag_list, chunk) for chunk in chunks])
+
+    # combine results
+    return list(itertools.chain.from_iterable(ret))
+
+
+def extract_features_thread(args):
+    """
+    extract features from data chunk
+    """
+    features, vocab_list, tag_list, data = args
+
+    tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
+    spr_mats = []
+    # collect sparse matrices for each word/tag pair
+    for sentence in data:
+        for idx, (word, tag) in enumerate(sentence):
+            spr_tag_list = []
+
+            for tag_i in tag_list:
+                vec_list = features(index_sentence_word(sentence, idx - 1), word,
+                                    index_sentence_word(sentence, idx + 1), index_sentence_tag(sentence, idx - 2),
+                                    index_sentence_tag(sentence, idx - 1), tag_i)
+                spr_tag_list.append(spr_feature_vec(vec_list))
+
+            spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
+    return spr_mats
+
+
 if __name__ == '__main__':
     """
     validation
@@ -171,6 +330,9 @@ if __name__ == '__main__':
     f_103 = F103(vocab_list, tag_list)
     f_104 = F104(vocab_list, tag_list)
     f_105 = F105(vocab_list, tag_list)
+    start_capital = StartCapital(vocab_list, tag_list)
+    all_capital = AllCapital(vocab_list, tag_list)
+    number = Number(vocab_list, tag_list)
 
     # test F100
     assert np.array_equal(np.array([[1, 0, 0, 0, 0, 0, 0, 0]]),
