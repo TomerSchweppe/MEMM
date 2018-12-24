@@ -4,7 +4,6 @@ import numpy as np
 from scipy import sparse
 from multiprocessing import Pool
 import itertools
-import time
 
 
 class Feature:

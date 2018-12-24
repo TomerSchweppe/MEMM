@@ -14,15 +14,20 @@ from viterbi import *
 import time
 
 
-def load_data(train_file):
+def process_line(line):
+    """process a signle tagged line"""
+    return [('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
+        ('STOP', 'STOP')]
+
+
+def load_data(data_file):
     """
     load training data
     """
     data = []
-    with open(train_file, 'r') as fh:
+    with open(data_file, 'r') as fh:
         for line in fh:
-            data.append([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
-                ('STOP', 'STOP')])
+            data.append(process_line(line))
     return data
 
 
@@ -34,8 +39,7 @@ def load_test(test_file):
     tags = []
     with open(train_file, 'r') as fh:
         for line in fh:
-            word_tag = ([('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
-                ('STOP', 'STOP')])
+            word_tag = (process_line(line))
             sentences.append([word for (word, _) in word_tag])
             tags.append([tag for (_, tag) in word_tag])
 
@@ -80,14 +84,14 @@ def feature_vec_len(spr_mats):
     return spr_mats[0][0].shape[1]
 
 
-def get_args_for_optimize(spr_mats, Lambda):
+def get_args_for_optimize(spr_mats, l):
     """
     return arguments for optimization
     """
     spr_mats_list, tag_idx_tup = zip(*spr_mats)
     spr_single_mat = sparse.vstack(spr_mats_list)
     spr_single_mat = spr_single_mat.tocsr()
-    args = (spr_single_mat, tag_idx_tup, Lambda)
+    args = (spr_single_mat, tag_idx_tup, l)
     return args
 
 
@@ -133,75 +137,109 @@ def eval(tagger, ground_truth, tag_list):
         print()
 
 
-if __name__ == '__main__':
-    # read input arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--train_file', help='training set file', default='train.wtag')
-    parser.add_argument('--test_file', help='test set file', default='test.wtag')
-    parser.add_argument('--model_file', help='trained model will be saved to this location, inference will load the '
-                                             'model for this location', default='cache/model.pickle')
-    parser.add_argument('--rare_threshold', type=int, help='words with term frequency under this threshold shall be '
-                                                           'treated as unknowns', default=3)
-    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10 ** (-2))
-    args = parser.parse_args()
-
-    if args.train_file:
-        train_file = args.train_file
-    if args.test_file:
-        test_file = args.test_file
-    if args.model_file:
-        model_file = args.model_file
-    if args.rare_threshold < 0:
-        raise ValueError('invalid rare_threshold = %d < 0' % args.rare_threshold)
-    rare_threshold = args.rare_threshold
-
+def process_data_for_training(train_file, threshold):
+    """load data from train_file and process it for training"""
     # load training data
-    print('loading data')
+    print('Loading data')
     data = load_data(train_file)
 
-    # data = data[:200]
+    data = data[:200]
 
     # word & tag lists
-    print('generate words and tags lists')
+    print('Generate words and tags lists')
     vocab_list, tag_list = vocab_and_tag_lists(data)
 
     # remove rare words from vocabulary
-    print('remove rare words from vocabulary')
-    remove_rare_words(vocab_list, data, rare_threshold)
+    print('Remove rare words from vocabulary')
+    remove_rare_words(vocab_list, data, threshold)
 
     # extract features from training data
-    print('extract features from training data')
-    start = time.time()
+    print('Extract features from training data')
     spr_mats = extract_features(vocab_list, tag_list, data, cpu_count())
-    print('extract time: ', time.time() - start)
+    return data, vocab_list, tag_list, spr_mats
 
-    # training
-    print('running training')
-    start = time.time()
+
+def train(data, spr_mats, l):
+    """train model given processed data"""
+    print('Running training')
     x_0 = np.random.random(feature_vec_len(spr_mats))  # initial guess shape (n,)
 
-    optimize_args = get_args_for_optimize(spr_mats, args.Lambda)
+    optimize_args = get_args_for_optimize(spr_mats, l)
 
-    print('optimize')
+    print('Optimize')
     v = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for, method='L-BFGS-B')
-    print('training time: ', time.time() - start)
     print(v)
+    return Viterbi(tag_list, vocab_list, v.x, tag_pairs(data))
 
-    # save trained model
-    os.makedirs(os.path.dirname(model_file), exist_ok=True)
-    pickle.dump(Viterbi(tag_list, vocab_list, v.x, tag_pairs(data)), open(model_file, 'wb'))
 
-    # test data preprocessing
-    sentences, test_tags = load_test(test_file)
+if __name__ == '__main__':
+    # read input arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train_file', help='Training set file', default='')
+    parser.add_argument('--test_file', help='Test set file', default='')
+    parser.add_argument('--inference_file', help='File containing sentences to tag', default='')
+    parser.add_argument('--model_file', help='Trained model will be saved to this location, inference will load the '
+                                             'model for this location.\n'
+                                             'Exisiting model will be overridden', default='cache/model.pickle')
+    parser.add_argument('--rare_threshold', type=int, help='words with term frequency under this threshold shall be '
+                                                           'treated as unknowns', default=3)
+    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10 ** (-2))
+    parser.add_argument('--beam_size', type=int, help='Beam size used in Viterbi for inference', default=5)
+    args = parser.parse_args()
 
-    # load saved model
-    viterbi = pickle.load(open(model_file, 'rb'))
+    to_train = False
+    to_evaluate = False
+    to_inference = False
+    model_file = args.model_file
 
-    # run viterbi
-    print('running viterbi')
-    start = time.time()
-    tagger = parallel_viterbi(viterbi, sentences, cpu_count())
-    print('viterbi time: ', time.time() - start)
+    if os.path.isfile(args.train_file):
+        train_file = args.train_file
+        to_train = True
+    if os.path.isfile(args.test_file):
+        test_file = args.test_file
+        to_evaluate = True
+    if os.path.isfile(args.inference_file):
+        inference_file = args.inference_file
+        to_inference = True
+    if args.rare_threshold < 0:
+        raise ValueError('Invalid rare_threshold = %d < 0' % args.rare_threshold)
+    if args.Lambda < 0:
+        raise ValueError('Invalid Lambda = %f < 0' % args.Lambda)
+    if to_train and os.path.isfile(model_file):
+        print('WARNING: Model at %s will be overridden' % model_file)
+    if args.beam_size < 0:
+        raise ValueError('Invalid beam_size = %d < 0' % args.beam_size)
 
-    # evaluation
-    eval(tagger, test_tags, tag_list)
+    if to_train:
+        # process training data
+        start = time.time()
+        data, vocab_list, tag_list, spr_mats = process_data_for_training(train_file, args.rare_threshold)
+        print('Loading time: ', time.time() - start)
+
+        # training
+        start = time.time()
+        viterbi = train(data, spr_mats, args.Lambda)
+        print('Training time: ', time.time() - start)
+
+        # save trained model
+        os.makedirs(os.path.dirname(model_file), exist_ok=True)
+        pickle.dump(viterbi, open(model_file, 'wb'))
+
+    if to_evaluate:
+        if not os.path.isfile(model_file):
+            raise FileNotFoundError('Saved model %s not found' % model_file)
+        # test data preprocessing
+        sentences, test_tags = load_test(test_file)
+
+        # load saved model
+        viterbi = pickle.load(open(model_file, 'rb'))
+
+        # run viterbi
+        start = time.time()
+        tagger = parallel_viterbi(viterbi, sentences[:10], args.beam_size, cpu_count())
+        print('Viterbi time: ', time.time() - start)
+
+        # evaluation
+        start = time.time()
+        eval(tagger, test_tags[:10], viterbi._tag_list)
+        print('Evaluation time:', time.time() - start)

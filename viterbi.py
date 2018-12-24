@@ -115,23 +115,24 @@ def batch_viterbi(args):
     """
     run viterbi on sentences batch
     """
-    viterbi, chunk = args
+    viterbi, chunk, beam_size = args
     res = []
     for sentence in chunk:
-        res.append(viterbi.run_viterbi(sentence))
+        res.append(viterbi.run_viterbi(sentence, beam_size))
     return res
 
 
-def parallel_viterbi(trained_viterbi, test_data, processes_num):
+def parallel_viterbi(trained_viterbi, test_data, beam_size, processes_num=1):
     """
     parallel viterbi
     """
+    print('Running Viterbi')
     # divide data into chunks
     sentence_batch_size = len(test_data) // processes_num
     chunks = [test_data[idx:idx + sentence_batch_size] for idx in range(0, len(test_data), sentence_batch_size)]
 
     processes = Pool()
-    ret = processes.map(batch_viterbi, [(trained_viterbi, chunk) for chunk in chunks])
+    ret = processes.map(batch_viterbi, [(trained_viterbi, chunk, beam_size) for chunk in chunks])
 
     # combine results
     return list(itertools.chain.from_iterable(ret))
