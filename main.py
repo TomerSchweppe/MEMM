@@ -6,8 +6,7 @@ from scipy import sparse
 from scipy import optimize
 import argparse
 import os
-from multiprocessing import Pool, cpu_count
-import itertools
+from multiprocessing import cpu_count
 from loss import *
 import pickle
 from viterbi import *
@@ -56,66 +55,6 @@ def vocab_and_tag_lists(data):
     return list(word_set), list(tag_set)
 
 
-def extract_features(vocab_list, tag_list, data, processes_num=1):
-    """
-    extract features from training data
-    """
-
-    # divide data into chunks
-    sentence_batch_size = len(data) // processes_num
-    chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
-
-    # run processes
-    processes = Pool()
-    ret = processes.map(extract_features_thread, [(vocab_list, tag_list, chunk) for chunk in chunks])
-
-    # combine results
-    return list(itertools.chain.from_iterable(ret))
-
-
-def extract_features_thread(args):
-    """
-    extract features from data chunk
-    """
-    vocab_list, tag_list, data = args
-
-    # init feature classes
-    f_100 = F100(vocab_list, tag_list)
-    f_101_1 = F101(vocab_list, tag_list, 1)
-    f_101_2 = F101(vocab_list, tag_list, 2)
-    f_101_3 = F101(vocab_list, tag_list, 3)
-    f_101_4 = F101(vocab_list, tag_list, 4)
-    f_102_1 = F102(vocab_list, tag_list, 1)
-    f_102_2 = F102(vocab_list, tag_list, 2)
-    f_102_3 = F102(vocab_list, tag_list, 3)
-    f_102_4 = F102(vocab_list, tag_list, 4)
-    f_103 = F103(vocab_list, tag_list)
-    f_104 = F104(vocab_list, tag_list)
-    f_105 = F105(vocab_list, tag_list)
-
-    tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
-    spr_mats = []
-    # collect sparse matrices for each word/tag pair
-    for sentence in data:
-        for idx, (word, tag) in enumerate(sentence):
-            spr_tag_list = []
-
-            for tag_i in tag_list:
-                vec_list = [f_100(word, tag_i),
-                            f_101_1(word, tag_i), f_101_2(word, tag_i), f_101_3(word, tag_i), f_101_4(word, tag_i),
-                            f_102_1(word, tag_i), f_102_2(word, tag_i), f_102_3(word, tag_i), f_102_4(word, tag_i),
-                            f_103(index_sentence_tag(sentence, idx - 2), index_sentence_tag(sentence, idx - 1), tag_i),
-                            f_104(index_sentence_tag(sentence, idx - 1), tag_i),
-                            f_105(tag_i),
-                            f_100(index_sentence_word(sentence, idx - 1), tag_i),  # F106
-                            f_100(index_sentence_word(sentence, idx + 1), tag_i)]  # F107
-
-                spr_tag_list.append(spr_feature_vec(vec_list))
-
-            spr_mats.append((sparse.vstack(spr_tag_list), tag_idx_dict[tag]))
-    return spr_mats
-
-
 def remove_rare_words(vocab_list, data, threshold):
     """
     remove rare words from vocab list
@@ -150,46 +89,6 @@ def get_args_for_optimize(spr_mats, Lambda):
     spr_single_mat = spr_single_mat.tocsr()
     args = (spr_single_mat, tag_idx_tup, Lambda)
     return args
-
-
-def tag_pairs(data):
-    """
-    return tag pairs seen in data 
-    """
-    tag_pairs_set = set()
-    for sentence in data:
-        prev_tag = '*'
-        for _, tag in sentence[2:]:
-            tag_pairs_set.add((prev_tag, tag))
-            prev_tag = tag
-
-    return tag_pairs_set
-
-
-def batch_viterbi(args):
-    """
-    run viterbi on sentences batch
-    """
-    viterbi, chunk = args
-    res = []
-    for sentence in chunk:
-        res.append(viterbi.run_viterbi(sentence))
-    return res
-
-
-def parallel_viterbi(trained_viterbi, test_data, processes_num=1):
-    """
-    parallel viterbi
-    """
-    # divide data into chunks
-    sentence_batch_size = len(test_data) // processes_num
-    chunks = [test_data[idx:idx + sentence_batch_size] for idx in range(0, len(test_data), sentence_batch_size)]
-
-    processes = Pool()
-    ret = processes.map(batch_viterbi, [(trained_viterbi, chunk) for chunk in chunks])
-
-    # combine results
-    return list(itertools.chain.from_iterable(ret))
 
 
 def eval(tagger, ground_truth, tag_list):
@@ -243,7 +142,7 @@ if __name__ == '__main__':
                                              'model for this location', default='cache/model.pickle')
     parser.add_argument('--rare_threshold', type=int, help='words with term frequency under this threshold shall be '
                                                            'treated as unknowns', default=3)
-    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10**(-2))
+    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10 ** (-2))
     args = parser.parse_args()
 
     if args.train_file:
@@ -305,4 +204,4 @@ if __name__ == '__main__':
     print('viterbi time: ', time.time() - start)
 
     # evaluation
-    eval(tagger,test_tags,tag_list)
+    eval(tagger, test_tags, tag_list)

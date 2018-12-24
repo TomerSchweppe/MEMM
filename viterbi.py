@@ -1,24 +1,8 @@
 # !/usr/bin/env python
 
 from features import *
-
-
-def index_sentence_word(sentence, idx):
-    """
-    safe indexing of sentence word
-    """
-    if idx < 0 or idx >= len(sentence):
-        return None
-    return sentence[idx][0]
-
-
-def index_sentence_tag(sentence, idx):
-    """
-    safe indexing of sentence tag
-    """
-    if idx < 0 or idx >= len(sentence):
-        return None
-    return sentence[idx][1]
+from multiprocessing import Pool
+import itertools
 
 
 class Viterbi:
@@ -38,36 +22,16 @@ class Viterbi:
         self._tag_pairs = tag_pairs
 
         # init feature classes
-        self._f_100 = F100(vocab_list, tag_list)
-        self._f_101_1 = F101(vocab_list, tag_list, 1)
-        self._f_101_2 = F101(vocab_list, tag_list, 2)
-        self._f_101_3 = F101(vocab_list, tag_list, 3)
-        self._f_101_4 = F101(vocab_list, tag_list, 4)
-        self._f_102_1 = F102(vocab_list, tag_list, 1)
-        self._f_102_2 = F102(vocab_list, tag_list, 2)
-        self._f_102_3 = F102(vocab_list, tag_list, 3)
-        self._f_102_4 = F102(vocab_list, tag_list, 4)
-        self._f_103 = F103(vocab_list, tag_list)
-        self._f_104 = F104(vocab_list, tag_list)
-        self._f_105 = F105(vocab_list, tag_list)
+        self._features = Features(vocab_list, tag_list)
 
     def q(self, t_2, t_1, tag_i, sentence, k):
         """
         q function
         """
         word = sentence[k]
-
-        vec_list = [self._f_100(word, tag_i),
-                    self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
-                    self._f_101_4(word, tag_i),
-                    self._f_102_1(word, tag_i), self._f_102_2(word, tag_i), self._f_102_3(word, tag_i),
-                    self._f_102_4(word, tag_i),
-                    self._f_103(t_2, t_1, tag_i),
-                    self._f_104(t_1, tag_i),
-                    self._f_105(tag_i),
-                    self._f_100(index_sentence_word(sentence, k - 1), tag_i),  # F106
-                    self._f_100(index_sentence_word(sentence, k + 1), tag_i)]  # F107
-
+        vec_list = self._features(index_sentence_word(sentence, k - 1), word,
+                                  index_sentence_word(sentence, k + 1), t_2,
+                                  t_1, tag_i)
         sum = 0
         jump = 0
         for pos, window in vec_list:
@@ -131,3 +95,43 @@ class Viterbi:
             pred_tag[k] = self._idx_tag_dict[bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])]]
         pred_tag.append('STOP')
         return pred_tag
+
+
+def tag_pairs(data):
+    """
+    return tag pairs seen in data 
+    """
+    tag_pairs_set = set()
+    for sentence in data:
+        prev_tag = '*'
+        for _, tag in sentence[2:]:
+            tag_pairs_set.add((prev_tag, tag))
+            prev_tag = tag
+
+    return tag_pairs_set
+
+
+def batch_viterbi(args):
+    """
+    run viterbi on sentences batch
+    """
+    viterbi, chunk = args
+    res = []
+    for sentence in chunk:
+        res.append(viterbi.run_viterbi(sentence))
+    return res
+
+
+def parallel_viterbi(trained_viterbi, test_data, processes_num):
+    """
+    parallel viterbi
+    """
+    # divide data into chunks
+    sentence_batch_size = len(test_data) // processes_num
+    chunks = [test_data[idx:idx + sentence_batch_size] for idx in range(0, len(test_data), sentence_batch_size)]
+
+    processes = Pool()
+    ret = processes.map(batch_viterbi, [(trained_viterbi, chunk) for chunk in chunks])
+
+    # combine results
+    return list(itertools.chain.from_iterable(ret))
