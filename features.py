@@ -217,10 +217,15 @@ class Features():
         self._all_capital = AllCapital(vocab_list, tag_list)
         self._number = Number(vocab_list, tag_list)
 
-    def __call__(self, prev_word, word, next_word, tag_2, tag_1, tag_i):
+    def __call__(self, sentence, idx, tag_2, tag_1, tag_i):
         """
         return list of all features
         """
+        word = index_sentence_word(sentence, idx)
+        prev_word = index_sentence_word(sentence, idx - 1)
+        prev_prev_word = index_sentence_word(sentence, idx - 2)
+        next_word = index_sentence_word(sentence, idx + 1)
+        next_next_word = index_sentence_word(sentence, idx + 2)
         return [self._f_100(word, tag_i),
                 self._f_101_1(word, tag_i), self._f_101_2(word, tag_i), self._f_101_3(word, tag_i),
                 self._f_101_4(word, tag_i),
@@ -231,6 +236,8 @@ class Features():
                 self._f_105(tag_i),
                 self._f_100(prev_word, tag_i),  # F106
                 self._f_100(next_word, tag_i),  # F107
+                self._f_100(prev_prev_word, tag_i),  # 2 words backward
+                self._f_100(next_next_word, tag_i),  # 2 words forward
                 self._start_capital(word, tag_i),
                 self._all_capital(word, tag_i),
                 self._number(word, tag_i)]
@@ -257,9 +264,13 @@ def index_sentence_word(sentence, idx):
     """
     safe indexing of sentence word
     """
+    # if idx == len(sentence):
+    #     return 'STOP'
     if idx < 0 or idx >= len(sentence):
         return None
-    return sentence[idx][0]
+    if type(sentence[idx]) is tuple:
+        return sentence[idx][0]
+    return sentence[idx]
 
 
 def index_sentence_tag(sentence, idx):
@@ -302,11 +313,12 @@ def extract_features_thread(args):
     # collect sparse matrices for each word/tag pair
     for sentence in data:
         for idx, (word, tag) in enumerate(sentence):
+            if word == '*' or word == 'STOP':
+                continue
             spr_tag_list = []
 
             for tag_i in tag_list:
-                vec_list = features(index_sentence_word(sentence, idx - 1), word,
-                                    index_sentence_word(sentence, idx + 1), index_sentence_tag(sentence, idx - 2),
+                vec_list = features(sentence, idx, index_sentence_tag(sentence, idx - 2),
                                     index_sentence_tag(sentence, idx - 1), tag_i)
                 spr_tag_list.append(spr_feature_vec(vec_list))
 

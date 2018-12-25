@@ -28,10 +28,7 @@ class Viterbi:
         """
         q function
         """
-        word = sentence[k]
-        vec_list = self._features(index_sentence_word(sentence, k - 1), word,
-                                  index_sentence_word(sentence, k + 1), t_2,
-                                  t_1, tag_i)
+        vec_list = self._features(sentence, k, t_2, t_1, tag_i)
         sum = 0
         jump = 0
         for pos, window in vec_list:

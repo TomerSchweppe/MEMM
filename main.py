@@ -19,6 +19,7 @@ class MutePrint:
     """
     Mute Printing for the block withing this class
     """
+
     def __enter__(self):
         """change stdout to devnull"""
         sys.stdout = open(os.devnull, 'w')
@@ -29,11 +30,10 @@ class MutePrint:
         sys.stdout = sys.__stdout__
 
 
-def process_line(line,delimiter):
+def process_line(line, delimiter):
     """process a signle tagged line"""
     return [('*', '*'), ('*', '*')] + [tuple(word_tag.split(delimiter)) for word_tag in line.strip().split()] + [
         ('STOP', 'STOP')]
-
 
 
 def load_data(data_file):
@@ -43,11 +43,11 @@ def load_data(data_file):
     data = []
     with open(data_file, 'r') as fh:
         for line in fh:
-                data.append(process_line(line,'_'))
+            data.append(process_line(line, '_'))
     return data
 
 
-def load_test(test_file,comp=False):
+def load_test(test_file, comp=False):
     """
     load test data
     """
@@ -56,10 +56,10 @@ def load_test(test_file,comp=False):
     with open(test_file, 'r') as fh:
         for line in fh:
             if comp:
-                word_tag = (process_line(line,' '))
+                word_tag = (process_line(line, ' '))
                 sentences.append([word[0] for word in word_tag])
             else:
-                word_tag = (process_line(line,'_'))
+                word_tag = (process_line(line, '_'))
                 sentences.append([word for (word, _) in word_tag])
                 tags.append([tag for (_, tag) in word_tag])
     return sentences, tags
@@ -199,7 +199,8 @@ def train(data, vocab_list, tag_list, spr_mats, l):
     optimize_args = get_args_for_optimize(spr_mats, l)
 
     print('Optimize')
-    opt_result = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for, method='L-BFGS-B')
+    opt_result = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for,
+                                   method='L-BFGS-B')
     return opt_result, Viterbi(tag_list, vocab_list, opt_result.x, tag_pairs(data))
 
 
@@ -285,7 +286,7 @@ if __name__ == '__main__':
     if args.cross_validate:
         if not os.path.isfile(args.train_file):
             raise FileNotFoundError('Need train_file in order to perform cross validation')
-        start=time.time()
+        start = time.time()
         accuracy = k_cross_validation(train_file, args.rare_threshold, args.k, args.Lambda, args.beam_size)
         print('Cross Validation Accuracy = %.3f' % accuracy)
         print('Cross Validation time: ', time.time() - start)
@@ -294,7 +295,6 @@ if __name__ == '__main__':
         # load training data
         print('Loading data')
         data = load_data(train_file)
-
 
         # process training data
         start = time.time()
@@ -339,17 +339,13 @@ if __name__ == '__main__':
             f_name = 'comp_m1_203764618.wtag'
         else:
             f_name = 'comp_m2_203764618.wtag'
-        fh = open(f_name,'w')
-        for sen_idx,sentence in enumerate(sentences):
-            for idx,(word,tag) in enumerate(zip(sentence,tagger[sen_idx])):
+        fh = open(f_name, 'w')
+        for sen_idx, sentence in enumerate(sentences):
+            for idx, (word, tag) in enumerate(zip(sentence, tagger[sen_idx])):
                 if idx == len(sentence) - 2:
                     fh.write(word + '_' + tag)
-                elif word != 'STOP'and word != '*':
-                    fh.write(word+'_'+tag+' ')
+                elif word != 'STOP' and word != '*':
+                    fh.write(word + '_' + tag + ' ')
             if sen_idx != len(sentences) - 1:
                 fh.write('\n')
         fh.close()
-
-
-
-
