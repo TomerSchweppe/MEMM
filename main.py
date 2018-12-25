@@ -249,7 +249,6 @@ if __name__ == '__main__':
         print('Loading data')
         data = load_data(train_file)
 
-        data = data[:100]
 
         # process training data
         start = time.time()
@@ -296,9 +295,13 @@ if __name__ == '__main__':
             f_name = 'comp_m2_203764618.wtag'
         fh = open(f_name,'w')
         for sen_idx,sentence in enumerate(sentences):
-            for word,tag in zip(sentence,tagger[sen_idx]):
-                if word != '*' and word != 'STOP':
+            for idx,(word,tag) in enumerate(zip(sentence,tagger[sen_idx])):
+                if idx == len(sentence) - 2:
+                    fh.write(word + '_' + tag)
+                elif word != 'STOP'and word != '*':
                     fh.write(word+'_'+tag+' ')
+            if sen_idx != len(sentences) - 1:
+                fh.write('\n')
         fh.close()
 
 
