@@ -137,7 +137,7 @@ def calculate_accuracy(tagger, ground_truth):
     return correct / total
 
 
-def evaluate(tagger, ground_truth, tag_list):
+def evaluate(tagger, ground_truth, tag_list,sen_tmp):
     """
     tagger evaluation
     """
@@ -145,11 +145,22 @@ def evaluate(tagger, ground_truth, tag_list):
     tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
     idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
 
+    tmpdict = dict()
+
     for sentence in range(len(ground_truth)):
-        for actual_tag, predicted_tag in zip(ground_truth[sentence], tagger[sentence]):
+        for i,(actual_tag, predicted_tag) in enumerate(zip(ground_truth[sentence], tagger[sentence])):
             if actual_tag == '*' or actual_tag == 'STOP':
                 continue
+            if tag_idx_dict[actual_tag] != tag_idx_dict[predicted_tag]:
+                word = sen_tmp[sentence][i]
+                if word not in tmpdict:
+                    tmpdict[word] = 0
+                else:
+                    tmpdict[word] += 1
+
             confusion_mat[tag_idx_dict[actual_tag], tag_idx_dict[predicted_tag]] += 1
+
+    print(tmpdict)
 
     # accuracy
     print('tagger accuracy:', np.trace(confusion_mat) / np.sum(confusion_mat))
@@ -251,16 +262,16 @@ if __name__ == '__main__':
                                              'Default is cache/model.pickle', default='cache/model.pickle')
     parser.add_argument('--rare_threshold', type=int, help='Words with term frequency under this threshold shall be '
                                                            'treated as unknowns', default=3)
-    parser.add_argument('--Lambda', type=float, help='Regularization term factor for optimization', default=10 ** (-2))
+    parser.add_argument('--Lambda', type=float, help='Regularization term factor for optimization', default=10 ** (-3))
     parser.add_argument('--beam_size', type=int, help='Beam size used in Viterbi for inference', default=5)
-    parser.add_argument('--cross_validate', action='store_true', help='Perform cross validation to train set',
-                        default=False)
+    parser.add_argument('--cross_validate', help='Perform cross validation to train set', default='')
     parser.add_argument('--k', type=int, help='How many folds to do in cross validation', default=7)
     args = parser.parse_args()
 
     to_train = False
     to_evaluate = False
     to_inference = False
+    to_cross_validate = False
     model_file = args.model_file
 
     if os.path.isfile(args.train_file):
@@ -272,6 +283,9 @@ if __name__ == '__main__':
     if os.path.isfile(args.inference_file):
         inference_file = args.inference_file
         to_inference = True
+    if os.path.isfile(args.cross_validate):
+        cross_validate_file = args.cross_validate
+        to_cross_validate = True
     if args.rare_threshold < 0:
         raise ValueError('Invalid rare_threshold = %d < 0' % args.rare_threshold)
     if args.Lambda < 0:
@@ -283,11 +297,9 @@ if __name__ == '__main__':
     if args.k < 0:
         raise ValueError('Invalid k = %d < 0' % args.k)
 
-    if args.cross_validate:
-        if not os.path.isfile(args.train_file):
-            raise FileNotFoundError('Need train_file in order to perform cross validation')
+    if to_cross_validate:
         start = time.time()
-        accuracy = k_cross_validation(train_file, args.rare_threshold, args.k, args.Lambda, args.beam_size)
+        accuracy = k_cross_validation(cross_validate_file, args.rare_threshold, args.k, args.Lambda, args.beam_size)
         print('Cross Validation Accuracy = %.3f' % accuracy)
         print('Cross Validation time: ', time.time() - start)
 
@@ -327,7 +339,7 @@ if __name__ == '__main__':
 
         # evaluation
         start = time.time()
-        evaluate(tagger, test_tags, viterbi._tag_list)
+        evaluate(tagger, test_tags, viterbi._tag_list,sentences)
         print('Evaluation time:', time.time() - start)
 
     # create competition file

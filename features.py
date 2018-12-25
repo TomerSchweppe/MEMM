@@ -153,8 +153,27 @@ class StartCapital(Feature):
         """
         start with capital letter / all capital letters
         """
-        if word[0].isupper:
+        if word[0].isupper():
             return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class ContainCapital(Feature):
+    """
+    word contain capital letter
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(ContainCapital, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        for char in word:
+            if char.isupper():
+                return self.feature_vec(0, 1, tag)
         return self.feature_vec(None, 1, tag)
 
 
@@ -171,7 +190,7 @@ class AllCapital(Feature):
         """
         start with capital letter / all capital letters
         """
-        if word.isupper:
+        if word.isupper():
             return self.feature_vec(0, 1, tag)
         return self.feature_vec(None, 1, tag)
 
@@ -191,7 +210,80 @@ class Number(Feature):
         """
         if word.isdigit():
             return self.feature_vec(0, 1, tag)
+        elif ',' in word and word[:word.find(',')].isdigit() and word[word.find(','):].isdigit():
+            return self.feature_vec(0, 1, tag)
         return self.feature_vec(None, 1, tag)
+
+
+class ContainNumber(Feature):
+    """
+    if word contain a number
+    """
+
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(ContainNumber, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        for char in word:
+            if char.isdigit():
+                return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class Hyphen(Feature):
+    """
+    check if contain hyphen
+    """
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(Hyphen, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        if '-' in word:
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class Dot(Feature):
+    """
+    check if contain dot
+    """
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(Dot, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag):
+        """
+        start with capital letter / all capital letters
+        """
+        if '.' in word and len(word) > 1:
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
+
+class CapitalBeginning(Feature):
+    """
+    check if first word in sentence and Starts with capital
+    """
+    def __init__(self, vocab_list, tag_list):
+        """init class"""
+        super(CapitalBeginning, self).__init__(vocab_list, tag_list)
+
+    def __call__(self, word, tag, tag_1):
+        """
+        start with capital letter / all capital letters
+        """
+        if tag_1 == '*' and word[0].isupper() and word[1:].islower():
+            return self.feature_vec(0, 1, tag)
+        return self.feature_vec(None, 1, tag)
+
 
 
 class Features():
@@ -217,6 +309,18 @@ class Features():
         self._all_capital = AllCapital(vocab_list, tag_list)
         self._number = Number(vocab_list, tag_list)
 
+        self._dot = Dot(vocab_list, tag_list)
+        self._hyphen = Hyphen(vocab_list, tag_list)
+        self._contain_number = ContainNumber(vocab_list, tag_list)
+        self._contain_capital = ContainCapital(vocab_list, tag_list)
+        self._capital_beginning = CapitalBeginning(vocab_list, tag_list)
+
+
+        self._f_102_1_prev_word = F102(vocab_list, tag_list, 1)
+        self._f_102_2_prev_word = F102(vocab_list, tag_list, 2)
+        self._f_102_3_prev_word = F102(vocab_list, tag_list, 3)
+        self._f_102_4_prev_word = F102(vocab_list, tag_list, 4)
+
     def __call__(self, sentence, idx, tag_2, tag_1, tag_i):
         """
         return list of all features
@@ -240,7 +344,17 @@ class Features():
                 self._f_100(next_next_word, tag_i),  # 2 words forward
                 self._start_capital(word, tag_i),
                 self._all_capital(word, tag_i),
-                self._number(word, tag_i)]
+                self._number(word, tag_i),
+                self._dot(word, tag_i),
+                self._hyphen(word, tag_i),
+                self._contain_number(word, tag_i),
+                self._contain_capital(word, tag_i),
+                self._capital_beginning(word, tag_i, tag_1),
+                self._f_102_1_prev_word(prev_word, tag_i),
+                self._f_102_2_prev_word(prev_word, tag_i),
+                self._f_102_3_prev_word(prev_word, tag_i),
+                self._f_102_4_prev_word(prev_word, tag_i)
+                ]
 
 
 def spr_feature_vec(vec_list):
