@@ -10,8 +10,23 @@ from multiprocessing import cpu_count
 from loss import *
 import pickle
 from viterbi import *
-
+import sys
 import time
+import random
+
+
+class MutePrint:
+    """
+    Mute Printing for the block withing this class
+    """
+    def __enter__(self):
+        """change stdout to devnull"""
+        sys.stdout = open(os.devnull, 'w')
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """restore stdout to default"""
+        sys.stdout = sys.__stdout__
 
 
 def process_line(line):
@@ -31,18 +46,13 @@ def load_data(data_file):
     return data
 
 
-def load_test(test_file):
-    """
-    load test data
-    """
+def prepare_data_for_test(data):
+    """prepare loaded data from load_data for testing"""
     sentences = []
     tags = []
-    with open(test_file, 'r') as fh:
-        for line in fh:
-            word_tag = (process_line(line))
-            sentences.append([word for (word, _) in word_tag])
-            tags.append([tag for (_, tag) in word_tag])
-
+    for tagged_sentence in data:
+        sentences.append([word for (word, _) in tagged_sentence])
+        tags.append([tag for (_, tag) in tagged_sentence])
     return sentences, tags
 
 
@@ -95,6 +105,20 @@ def get_args_for_optimize(spr_mats, l):
     return args
 
 
+def calculate_accuracy(tagger, ground_truth):
+    """calculate accuracy of the tagger"""
+    total = 0
+    correct = 0
+    for sentence in range(len(ground_truth)):
+        for actual_tag, predicted_tag in zip(ground_truth[sentence], tagger[sentence]):
+            if actual_tag == '*' or actual_tag == 'STOP':
+                continue
+            total += 1
+            correct += 1 if actual_tag == predicted_tag else 0
+    return correct / total
+
+
+
 def evaluate(tagger, ground_truth, tag_list):
     """
     tagger evaluation
@@ -118,7 +142,7 @@ def evaluate(tagger, ground_truth, tag_list):
 
     # confusion matrix - 10 worst predictions
     print('confusion matrix - 10 worst predictions:')
-    print('     ', end='')
+    print('      ', end='')
     for tag in tag_list:
         print(tag.ljust(6), end='')
     print()
@@ -161,31 +185,39 @@ def train(data, vocab_list, tag_list, spr_mats, l):
     return opt_result, Viterbi(tag_list, vocab_list, opt_result.x, tag_pairs(data))
 
 
-# def k_cross_validation(train_file, rare_threshold, k, l):
-#     """perform k-fold cross validation"""
-#     print('Performing %d-fold Cross Validation' % k)
-#     data = load_data(train_file)
-#     chunk_len = len(data[:100]) // k
-#     chunks = [data[i * chunk_len: (i + 1) * chunk_len] for i in range(k)]
-#
-#     accuracy_accum = 0
-#
-#     for i in range(k):
-#         # divide data to train and test sets
-#         train_data = chunks.copy()
-#         test_data = train_data.pop(i)
-#
-#         # pre-process data
-#         vocab_list, tag_list, spr_mats = process_data_for_training(data, args.rare_threshold)
-#
-#         # train on data
-#         result, viterbi = train(train_data, vocab_list, tag_list, spr_mats, l)
-#         if not result.success:
-#             print('in fold %d convergence failed: %s' % (i, result.message))
+def k_cross_validation(train_file, rare_threshold, k, l, beam_size):
+    """perform k-fold cross validation"""
+    print('Performing %d-fold Cross Validation' % k)
+    data = load_data(train_file)
+    random.shuffle(data)
+    chunk_len = len(data) // k
+    chunks = [data[i * chunk_len: (i + 1) * chunk_len] for i in range(k)]
 
+    accuracy_accum = 0
 
+    for i in range(k):
+        # divide data to train and test sets
+        train_data = chunks.copy()
+        test_data = train_data.pop(i)
+        train_data = list(itertools.chain.from_iterable(train_data))
 
+        # pre-process data and train
+        with MutePrint():
+            vocab_list, tag_list, spr_mats = process_data_for_training(train_data, rare_threshold)
+            # train on data
+            result, viterbi = train(train_data, vocab_list, tag_list, spr_mats, l)
+        if not result.success:
+            print('in fold %d convergence failed: %s' % (i, result.message))
 
+        # prepare data for testing, run viterbi and accumulate accuracy
+        sentences, test_tags = prepare_data_for_test(test_data)
+        with MutePrint():
+            tagger = parallel_viterbi(viterbi, sentences, beam_size, cpu_count())
+            accuracy = calculate_accuracy(tagger, test_tags)
+            accuracy_accum += accuracy
+        print('Fold %d Accuracy: %.3f' % (i, accuracy))
+
+    return accuracy_accum / k
 
 
 if __name__ == '__main__':
@@ -204,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--beam_size', type=int, help='Beam size used in Viterbi for inference', default=5)
     parser.add_argument('--cross_validate', action='store_true', help='Perform cross validation to train set',
                         default=False)
-    parser.add_argument('--k', type=int, help='How many folds to do in cross validation', default=10)
+    parser.add_argument('--k', type=int, help='How many folds to do in cross validation', default=7)
     args = parser.parse_args()
 
     to_train = False
@@ -232,12 +264,13 @@ if __name__ == '__main__':
     if args.k < 0:
         raise ValueError('Invalid k = %d < 0' % args.k)
 
-    # if args.cross_validate:
-    #     if not os.path.isfile(args.train_file):
-    #         raise FileNotFoundError('Need train_file in order to perform cross validation')
-    #     start=time.time()
-    #     k_cross_validation(train_file, args.rare_threshold, args.k, args.Lambda)
-    #     print('Cross Validation time: ', time.time() - start)
+    if args.cross_validate:
+        if not os.path.isfile(args.train_file):
+            raise FileNotFoundError('Need train_file in order to perform cross validation')
+        start=time.time()
+        accuracy = k_cross_validation(train_file, args.rare_threshold, args.k, args.Lambda, args.beam_size)
+        print('Cross Validation Accuracy = %.3f' % accuracy)
+        print('Cross Validation time: ', time.time() - start)
 
     if to_train:
         # load training data
@@ -263,7 +296,8 @@ if __name__ == '__main__':
         if not os.path.isfile(model_file):
             raise FileNotFoundError('Saved model %s not found' % model_file)
         # test data preprocessing
-        sentences, test_tags = load_test(test_file)
+        test_data = load_data(test_file)
+        sentences, test_tags = prepare_data_for_test(test_data)
 
         # load saved model
         viterbi = pickle.load(open(model_file, 'rb'))
