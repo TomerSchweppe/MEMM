@@ -37,7 +37,7 @@ def load_test(test_file):
     """
     sentences = []
     tags = []
-    with open(train_file, 'r') as fh:
+    with open(test_file, 'r') as fh:
         for line in fh:
             word_tag = (process_line(line))
             sentences.append([word for (word, _) in word_tag])
@@ -95,11 +95,10 @@ def get_args_for_optimize(spr_mats, l):
     return args
 
 
-def eval(tagger, ground_truth, tag_list):
+def evaluate(tagger, ground_truth, tag_list):
     """
     tagger evaluation
     """
-
     confusion_mat = np.zeros((len(tag_list), len(tag_list)), dtype=int)
     tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
     idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
@@ -119,47 +118,38 @@ def eval(tagger, ground_truth, tag_list):
 
     # confusion matrix - 10 worst predictions
     print('confusion matrix - 10 worst predictions:')
-    print('      ', end='')
+    print('     ', end='')
     for tag in tag_list:
-        print(tag, end=' ')
+        print(tag.ljust(6), end='')
     print()
 
     row_labels = []
     for idx in rows:
         row_labels.append(idx_tag_dict[idx])
     for row_label, row in zip(row_labels, confusion_mat[rows, :]):
-        print(row_label.ljust(5), end='')
+        print(row_label.ljust(6), end='')
         for i, val in enumerate(row):
-            if i == 0:
-                print(' ' + str(val), end='')
-            else:
-                print(' ' * (len(tag_list[i - 1])) + str(val), end='')
+            print(str(val).ljust(6), end='')
         print()
 
 
-def process_data_for_training(train_file, threshold):
+def process_data_for_training(data, rare_threshold):
     """load data from train_file and process it for training"""
-    # load training data
-    print('Loading data')
-    data = load_data(train_file)
-
-    data = data[:200]
-
     # word & tag lists
     print('Generate words and tags lists')
     vocab_list, tag_list = vocab_and_tag_lists(data)
 
     # remove rare words from vocabulary
     print('Remove rare words from vocabulary')
-    remove_rare_words(vocab_list, data, threshold)
+    remove_rare_words(vocab_list, data, rare_threshold)
 
     # extract features from training data
     print('Extract features from training data')
     spr_mats = extract_features(vocab_list, tag_list, data, cpu_count())
-    return data, vocab_list, tag_list, spr_mats
+    return vocab_list, tag_list, spr_mats
 
 
-def train(data, spr_mats, l):
+def train(data, vocab_list, tag_list, spr_mats, l):
     """train model given processed data"""
     print('Running training')
     x_0 = np.random.random(feature_vec_len(spr_mats))  # initial guess shape (n,)
@@ -167,9 +157,35 @@ def train(data, spr_mats, l):
     optimize_args = get_args_for_optimize(spr_mats, l)
 
     print('Optimize')
-    v = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for, method='L-BFGS-B')
-    print(v)
-    return Viterbi(tag_list, vocab_list, v.x, tag_pairs(data))
+    opt_result = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for, method='L-BFGS-B')
+    return opt_result, Viterbi(tag_list, vocab_list, opt_result.x, tag_pairs(data))
+
+
+# def k_cross_validation(train_file, rare_threshold, k, l):
+#     """perform k-fold cross validation"""
+#     print('Performing %d-fold Cross Validation' % k)
+#     data = load_data(train_file)
+#     chunk_len = len(data[:100]) // k
+#     chunks = [data[i * chunk_len: (i + 1) * chunk_len] for i in range(k)]
+#
+#     accuracy_accum = 0
+#
+#     for i in range(k):
+#         # divide data to train and test sets
+#         train_data = chunks.copy()
+#         test_data = train_data.pop(i)
+#
+#         # pre-process data
+#         vocab_list, tag_list, spr_mats = process_data_for_training(data, args.rare_threshold)
+#
+#         # train on data
+#         result, viterbi = train(train_data, vocab_list, tag_list, spr_mats, l)
+#         if not result.success:
+#             print('in fold %d convergence failed: %s' % (i, result.message))
+
+
+
+
 
 
 if __name__ == '__main__':
@@ -180,11 +196,15 @@ if __name__ == '__main__':
     parser.add_argument('--inference_file', help='File containing sentences to tag', default='')
     parser.add_argument('--model_file', help='Trained model will be saved to this location, inference will load the '
                                              'model for this location.\n'
-                                             'Exisiting model will be overridden', default='cache/model.pickle')
-    parser.add_argument('--rare_threshold', type=int, help='words with term frequency under this threshold shall be '
+                                             'Exisiting model will be overridden\n'
+                                             'Default is cache/model.pickle', default='cache/model.pickle')
+    parser.add_argument('--rare_threshold', type=int, help='Words with term frequency under this threshold shall be '
                                                            'treated as unknowns', default=3)
-    parser.add_argument('--Lambda', type=float, help='regularization term factor for optimization', default=10 ** (-2))
+    parser.add_argument('--Lambda', type=float, help='Regularization term factor for optimization', default=10 ** (-2))
     parser.add_argument('--beam_size', type=int, help='Beam size used in Viterbi for inference', default=5)
+    parser.add_argument('--cross_validate', action='store_true', help='Perform cross validation to train set',
+                        default=False)
+    parser.add_argument('--k', type=int, help='How many folds to do in cross validation', default=10)
     args = parser.parse_args()
 
     to_train = False
@@ -209,16 +229,30 @@ if __name__ == '__main__':
         print('WARNING: Model at %s will be overridden' % model_file)
     if args.beam_size < 0:
         raise ValueError('Invalid beam_size = %d < 0' % args.beam_size)
+    if args.k < 0:
+        raise ValueError('Invalid k = %d < 0' % args.k)
+
+    # if args.cross_validate:
+    #     if not os.path.isfile(args.train_file):
+    #         raise FileNotFoundError('Need train_file in order to perform cross validation')
+    #     start=time.time()
+    #     k_cross_validation(train_file, args.rare_threshold, args.k, args.Lambda)
+    #     print('Cross Validation time: ', time.time() - start)
 
     if to_train:
+        # load training data
+        print('Loading data')
+        data = load_data(train_file)
+
         # process training data
         start = time.time()
-        data, vocab_list, tag_list, spr_mats = process_data_for_training(train_file, args.rare_threshold)
+        vocab_list, tag_list, spr_mats = process_data_for_training(data, args.rare_threshold)
         print('Loading time: ', time.time() - start)
 
         # training
         start = time.time()
-        viterbi = train(data, spr_mats, args.Lambda)
+        result, viterbi = train(data, vocab_list, tag_list, spr_mats, args.Lambda)
+        print(result)
         print('Training time: ', time.time() - start)
 
         # save trained model
@@ -236,10 +270,10 @@ if __name__ == '__main__':
 
         # run viterbi
         start = time.time()
-        tagger = parallel_viterbi(viterbi, sentences[:10], args.beam_size, cpu_count())
+        tagger = parallel_viterbi(viterbi, sentences, args.beam_size, cpu_count())
         print('Viterbi time: ', time.time() - start)
 
         # evaluation
         start = time.time()
-        eval(tagger, test_tags[:10], viterbi._tag_list)
+        evaluate(tagger, test_tags, viterbi._tag_list)
         print('Evaluation time:', time.time() - start)
