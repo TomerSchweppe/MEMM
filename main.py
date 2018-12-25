@@ -14,10 +14,11 @@ from viterbi import *
 import time
 
 
-def process_line(line):
+def process_line(line,delimiter):
     """process a signle tagged line"""
-    return [('*', '*'), ('*', '*')] + [tuple(word_tag.split('_')) for word_tag in line.strip().split()] + [
+    return [('*', '*'), ('*', '*')] + [tuple(word_tag.split(delimiter)) for word_tag in line.strip().split()] + [
         ('STOP', 'STOP')]
+
 
 
 def load_data(data_file):
@@ -27,11 +28,11 @@ def load_data(data_file):
     data = []
     with open(data_file, 'r') as fh:
         for line in fh:
-            data.append(process_line(line))
+                data.append(process_line(line,'_'))
     return data
 
 
-def load_test(test_file):
+def load_test(test_file,comp=False):
     """
     load test data
     """
@@ -39,9 +40,13 @@ def load_test(test_file):
     tags = []
     with open(test_file, 'r') as fh:
         for line in fh:
-            word_tag = (process_line(line))
-            sentences.append([word for (word, _) in word_tag])
-            tags.append([tag for (_, tag) in word_tag])
+            if comp:
+                word_tag = (process_line(line,' '))
+                sentences.append([word[0] for word in word_tag])
+            else:
+                word_tag = (process_line(line,'_'))
+                sentences.append([word for (word, _) in word_tag])
+                tags.append([tag for (_, tag) in word_tag])
 
     return sentences, tags
 
@@ -244,6 +249,8 @@ if __name__ == '__main__':
         print('Loading data')
         data = load_data(train_file)
 
+        data = data[:100]
+
         # process training data
         start = time.time()
         vocab_list, tag_list, spr_mats = process_data_for_training(data, args.rare_threshold)
@@ -277,3 +284,23 @@ if __name__ == '__main__':
         start = time.time()
         evaluate(tagger, test_tags, viterbi._tag_list)
         print('Evaluation time:', time.time() - start)
+
+    # create competition file
+    if to_inference:
+        sentences, _ = load_test(inference_file, comp=True)
+        viterbi = pickle.load(open(model_file, 'rb'))
+        tagger = parallel_viterbi(viterbi, sentences, args.beam_size, cpu_count())
+        if inference_file == 'comp.words':
+            f_name = 'comp_m1_203764618.wtag'
+        else:
+            f_name = 'comp_m2_203764618.wtag'
+        fh = open(f_name,'w')
+        for sen_idx,sentence in enumerate(sentences):
+            for word,tag in zip(sentence,tagger[sen_idx]):
+                if word != '*' and word != 'STOP':
+                    fh.write(word+'_'+tag+' ')
+        fh.close()
+
+
+
+
