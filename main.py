@@ -152,8 +152,6 @@ def evaluate(tagger, ground_truth, tag_list):
                 continue
             confusion_mat[tag_idx_dict[actual_tag], tag_idx_dict[predicted_tag]] += 1
 
-    print(tmpdict)
-
     # accuracy
     print('tagger accuracy:', np.trace(confusion_mat) / np.sum(confusion_mat))
     # 10 worst in confusion matrix
