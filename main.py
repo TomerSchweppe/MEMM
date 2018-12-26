@@ -251,7 +251,7 @@ if __name__ == '__main__':
                                              'Exisiting model will be overridden\n'
                                              'Default is cache/model.pickle', default='cache/model.pickle')
     parser.add_argument('--rare_threshold', type=int, help='Words with term frequency under this threshold shall be '
-                                                           'treated as unknowns', default=3)
+                                                           'treated as unknowns', default=1)
     parser.add_argument('--Lambda', type=float, help='Regularization term factor for optimization', default=10 ** (-3))
     parser.add_argument('--beam_size', type=int, help='Beam size used in Viterbi for inference', default=5)
     parser.add_argument('--cross_validate', help='Perform cross validation to train set', default='')

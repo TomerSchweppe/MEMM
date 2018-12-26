@@ -280,7 +280,7 @@ class CapitalBeginning(Feature):
         """
         start with capital letter / all capital letters
         """
-        if tag_1 == '*' and word[0].isupper() and word[1:].islower():
+        if (tag_1 == '*' or tag_1 == '.') and word[0].isupper() and word[1:].islower():
             return self.feature_vec(0, 1, tag)
         return self.feature_vec(None, 1, tag)
 
@@ -303,7 +303,7 @@ class Apostrophe(Feature):
 
 
 class Features():
-    """
+    """StartCapital
     Features class
     """
 
@@ -336,6 +336,11 @@ class Features():
         self._f_102_2_prev_word = F102(vocab_list, tag_list, 2)
         self._f_102_3_prev_word = F102(vocab_list, tag_list, 3)
         self._f_102_4_prev_word = F102(vocab_list, tag_list, 4)
+
+        self._f_102_1_next_word = F102(vocab_list, tag_list, 1)
+        self._f_102_2_next_word = F102(vocab_list, tag_list, 2)
+        self._f_102_3_next_word = F102(vocab_list, tag_list, 3)
+        self._f_102_4_next_word = F102(vocab_list, tag_list, 4)
         self._apostrophe = Apostrophe(vocab_list,tag_list)
 
     def __call__(self, sentence, idx, tag_2, tag_1, tag_i):
@@ -371,6 +376,10 @@ class Features():
                 self._f_102_2_prev_word(prev_word, tag_i),
                 self._f_102_3_prev_word(prev_word, tag_i),
                 self._f_102_4_prev_word(prev_word, tag_i),
+                self._f_101_1(prev_word, tag_i),
+                self._f_101_2(prev_word, tag_i),
+                self._f_101_3(prev_word, tag_i),
+                self._f_101_4(prev_word, tag_i),
                 self._apostrophe(word, tag_i)
                 ]
 
