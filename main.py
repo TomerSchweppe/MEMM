@@ -137,7 +137,7 @@ def calculate_accuracy(tagger, ground_truth):
     return correct / total
 
 
-def evaluate(tagger, ground_truth, tag_list,sen_tmp):
+def evaluate(tagger, ground_truth, tag_list):
     """
     tagger evaluation
     """
@@ -145,19 +145,11 @@ def evaluate(tagger, ground_truth, tag_list,sen_tmp):
     tag_idx_dict = {tag: idx for idx, tag in enumerate(tag_list)}
     idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
 
-    tmpdict = dict()
 
     for sentence in range(len(ground_truth)):
-        for i,(actual_tag, predicted_tag) in enumerate(zip(ground_truth[sentence], tagger[sentence])):
+        for actual_tag, predicted_tag in zip(ground_truth[sentence], tagger[sentence]):
             if actual_tag == '*' or actual_tag == 'STOP':
                 continue
-            if tag_idx_dict[actual_tag] != tag_idx_dict[predicted_tag]:
-                word = sen_tmp[sentence][i]
-                if word not in tmpdict:
-                    tmpdict[word] = 0
-                else:
-                    tmpdict[word] += 1
-
             confusion_mat[tag_idx_dict[actual_tag], tag_idx_dict[predicted_tag]] += 1
 
     print(tmpdict)
@@ -339,7 +331,7 @@ if __name__ == '__main__':
 
         # evaluation
         start = time.time()
-        evaluate(tagger, test_tags, viterbi._tag_list,sentences)
+        evaluate(tagger, test_tags, viterbi._tag_list)
         print('Evaluation time:', time.time() - start)
 
     # create competition file
