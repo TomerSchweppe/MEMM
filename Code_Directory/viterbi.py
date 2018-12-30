@@ -10,7 +10,7 @@ class Viterbi:
     viterbi class
     """
 
-    def __init__(self, tag_list, vocab_list, v_train, tag_pairs):
+    def __init__(self, tag_list, vocab_list, v_train, data):
         """
         create tag-idx dictionaries
         """
@@ -19,10 +19,9 @@ class Viterbi:
         self._idx_tag_dict = {idx: tag for idx, tag in enumerate(tag_list)}
         self._tags_num = len(self._tag_idx_dict)
         self._v_train = v_train
-        self._tag_pairs = tag_pairs
 
         # init feature classes
-        self._features = Features(vocab_list, tag_list)
+        self._features = Features(vocab_list, tag_list, data)
 
     def q(self, t_2, t_1, tag_i, sentence, k):
         """
@@ -65,7 +64,7 @@ class Viterbi:
         # iterate words
         for k in range(1, n):
             # iterate u,v
-            for u, v in self._tag_pairs:
+            for u, v in [(x, y) for x in self._tag_list for y in self._tag_list]:
                 if (u == '*' and k != 1) or u == 'STOP' or v == '*':
                     continue
 
@@ -92,20 +91,6 @@ class Viterbi:
             pred_tag[k] = self._idx_tag_dict[bp[k + 2, self.tag_pos(pred_tag[k + 1], pred_tag[k + 2])]]
         pred_tag.append('STOP')
         return pred_tag
-
-
-def tag_pairs(data):
-    """
-    return tag pairs seen in data 
-    """
-    tag_pairs_set = set()
-    for sentence in data:
-        prev_tag = '*'
-        for _, tag in sentence[2:]:
-            tag_pairs_set.add((prev_tag, tag))
-            prev_tag = tag
-
-    return tag_pairs_set
 
 
 def batch_viterbi(args):

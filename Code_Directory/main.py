@@ -202,7 +202,7 @@ def train(data, vocab_list, tag_list, spr_mats, l):
     print('Optimize')
     opt_result = optimize.minimize(loss_function_no_for, x0=x_0, args=optimize_args, jac=dloss_dv_no_for,
                                    method='L-BFGS-B')
-    return opt_result, Viterbi(tag_list, vocab_list, opt_result.x, tag_pairs(data))
+    return opt_result, Viterbi(tag_list, vocab_list, opt_result.x, data)
 
 
 def k_cross_validation(train_file, rare_threshold, k, l, beam_size):

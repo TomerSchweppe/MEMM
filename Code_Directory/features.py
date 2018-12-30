@@ -99,16 +99,16 @@ class F103(Feature):
     2 previous & current word tag
     """
 
-    def __init__(self, vocab_list, tag_list):
+    def __init__(self, vocab_list, tag_list, tag_pairs_set):
         """create tag pairs hash table"""
         super(F103, self).__init__(vocab_list, tag_list)
-        self._tags_idx_dict = {(tag1, tag2): idx2 + idx1 * self._tags_num for idx1, tag1 in enumerate(tag_list) for
-                               idx2, tag2 in enumerate(tag_list)}
+        self._tags_idx_dict = {(tag1, tag2): i for i, (tag1, tag2) in enumerate(list(
+            tag_pairs_set))}
 
     def __call__(self, t_2, t_1, tag):
         "return F103 feature matrix"
-        return self.feature_vec(self._tags_idx_dict.get((t_2, t_1), None), self._tags_num * self._tags_num,
-                                tag)
+        return self.feature_vec(self._tags_idx_dict.get((t_2, t_1), None),
+                                len(self._tags_idx_dict), tag)
 
 
 class F104(Feature):
@@ -307,7 +307,7 @@ class Features():
     Features class
     """
 
-    def __init__(self, vocab_list, tag_list):
+    def __init__(self, vocab_list, tag_list, data):
         # init feature classes
         self._f_100 = F100(vocab_list, tag_list)
         self._f_101_1 = F101(vocab_list, tag_list, 1)
@@ -318,26 +318,17 @@ class Features():
         self._f_102_2 = F102(vocab_list, tag_list, 2)
         self._f_102_3 = F102(vocab_list, tag_list, 3)
         self._f_102_4 = F102(vocab_list, tag_list, 4)
-        self._f_103 = F103(vocab_list, tag_list)
+        self._f_103 = F103(vocab_list, tag_list, tag_pairs(data))
         self._f_104 = F104(vocab_list, tag_list)
         self._f_105 = F105(vocab_list, tag_list)
         self._start_capital = StartCapital(vocab_list, tag_list)
         self._all_capital = AllCapital(vocab_list, tag_list)
         self._number = Number(vocab_list, tag_list)
-
         self._dot = Dot(vocab_list, tag_list)
         self._hyphen = Hyphen(vocab_list, tag_list)
         self._contain_number = ContainNumber(vocab_list, tag_list)
         self._contain_capital = ContainCapital(vocab_list, tag_list)
         self._capital_beginning = CapitalBeginning(vocab_list, tag_list)
-
-
-        self._f_102_1_prev_word = F102(vocab_list, tag_list, 1)
-        self._f_102_2_prev_word = F102(vocab_list, tag_list, 2)
-        self._f_102_3_prev_word = F102(vocab_list, tag_list, 3)
-        self._f_102_4_prev_word = F102(vocab_list, tag_list, 4)
-
-
         self._apostrophe = Apostrophe(vocab_list,tag_list)
 
     def __call__(self, sentence, idx, tag_2, tag_1, tag_i):
@@ -369,14 +360,6 @@ class Features():
                 self._contain_number(word, tag_i),
                 self._contain_capital(word, tag_i),
                 self._capital_beginning(word, tag_i, tag_1),
-                self._f_102_1_prev_word(prev_word, tag_i),
-                self._f_102_2_prev_word(prev_word, tag_i),
-                self._f_102_3_prev_word(prev_word, tag_i),
-                self._f_102_4_prev_word(prev_word, tag_i),
-                self._f_101_1(prev_word, tag_i),
-                self._f_101_2(prev_word, tag_i),
-                self._f_101_3(prev_word, tag_i),
-                self._f_101_4(prev_word, tag_i),
                 self._apostrophe(word, tag_i)
                 ]
 
@@ -396,6 +379,21 @@ def spr_feature_vec(vec_list):
     data = np.ones(data_length, dtype=bool)
 
     return sparse.coo_matrix((data, ([0] * len(col), col)), shape=(1, jump), dtype=bool)
+
+
+def tag_pairs(data):
+    """
+    return tag pairs seen in data
+    """
+    tag_pairs_set = set()
+    tag_pairs_set.add(('*', '*'))
+    for sentence in data:
+        prev_tag = '*'
+        for _, tag in sentence[2:]:
+            tag_pairs_set.add((prev_tag, tag))
+            prev_tag = tag
+
+    return tag_pairs_set
 
 
 def index_sentence_word(sentence, idx):
@@ -430,7 +428,7 @@ def extract_features(vocab_list, tag_list, data, processes_num):
     chunks = [data[idx:idx + sentence_batch_size] for idx in range(0, len(data), sentence_batch_size)]
 
     # init features
-    features = Features(vocab_list, tag_list)
+    features = Features(vocab_list, tag_list, data)
 
     # run processes
     processes = Pool()
@@ -451,8 +449,6 @@ def extract_features_thread(args):
     # collect sparse matrices for each word/tag pair
     for sentence in data:
         for idx, (word, tag) in enumerate(sentence):
-            if word == '*' or word == 'STOP':
-                continue
             spr_tag_list = []
 
             for tag_i in tag_list:
